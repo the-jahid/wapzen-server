@@ -166,11 +166,17 @@ type ToolEndCallConfig struct {
 // are nil and omitted from responses, so a resource never advertises settings
 // that have no effect on it.
 type Tool struct {
-	ID           string                  `json:"id" example:"tool_12345"`
-	UserID       string                  `json:"-"`
-	Type         string                  `json:"type" example:"api_request"`
-	Name         string                  `json:"name" example:"check_availability"`
-	Description  string                  `json:"description" example:"Look up open appointment slots for a given day."`
+	ID          string `json:"id" example:"tool_12345"`
+	UserID      string `json:"-"`
+	Type        string `json:"type" example:"api_request"`
+	Name        string `json:"name" example:"check_availability"`
+	Description string `json:"description" example:"Look up open appointment slots for a given day."`
+	// AgentID is the agent this tool belongs to, or null while it belongs to
+	// none. Read-only here: a tool is attached by writing the owning agent's
+	// tools.tool_ids, so the fact has one write path rather than two that can
+	// disagree. It is returned so a client can see which tools are already
+	// spoken for before it tries to attach one.
+	AgentID      *string                 `json:"agent_id" example:"agent_12345"`
 	APIRequest   *ToolAPIRequestConfig   `json:"api_request,omitempty"`
 	TransferCall *ToolTransferCallConfig `json:"transfer_call,omitempty"`
 	SendText     *ToolSendTextConfig     `json:"send_text,omitempty"`

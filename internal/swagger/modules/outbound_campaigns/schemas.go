@@ -122,8 +122,7 @@ func outboundCampaignSchema() oas.Object {
 		P("calls_placed", oas.Int().Desc("Total calls the campaign has placed.").Min(0).Example(656)).
 		P("answered_calls", oas.Int().Desc("Calls the callee picked up. Numerator of pickup_rate.").Min(0).Example(412)).
 		P("successful_calls", oas.Int().Desc("Calls that met the campaign's success condition. Numerator of success_rate.").Min(0).Example(188)).
-		P("today_calls", oas.Int().Desc("Calls placed on today_calls_date. It is reported as 0 once that date is no longer today, so a stale counter never renders as today's activity.").Min(0).Example(37)).
-		P("today_calls_date", oas.Str().Format("date").Nullable().Desc("The day today_calls counts. Null until the campaign places its first call.").Example("2026-08-10")).
+		P("today_calls", oas.Int().Desc("Calls placed today.").Min(0).Example(37)).
 		P("total_usage_seconds", oas.Int().Desc("Total connected call time in seconds. Dashboards render this in minutes.").Min(0).Example(74520)).
 
 		// Derived, read-only.

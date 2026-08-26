@@ -21,6 +21,8 @@ var SelectableFieldsOptions = []string{
 	"post_call",
 	"knowledge_base",
 	"knowledge_base.knowledge_base_ids",
+	"tools",
+	"tools.tool_ids",
 }
 
 // SelectableField is the union of SelectableFieldsOptions.

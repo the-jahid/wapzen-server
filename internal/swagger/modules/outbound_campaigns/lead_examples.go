@@ -42,7 +42,7 @@ func createCampaignLeadNotDialledExample() oas.Object {
 func campaignAnalyticsResponseExample() oas.Object {
 	return oas.Object{"success": true, "message": "Campaign analytics retrieved successfully", "data": oas.Object{
 		"campaign_id": "campaign_a456426614174000",
-		"leads":       oas.Object{"total": 120, "pending": 64, "calling": 2, "contacted": 41, "failed": 11, "opted_out": 2},
+		"leads":       oas.Object{"total": 120, "pending": 64, "calling": 2, "called": 43, "failed": 11},
 		"calls":       oas.Object{"total": 96, "received": 1, "answered": 2, "ended": 70, "declined": 18, "failed": 5, "connected": 60, "successful": 58},
 		"pickup_rate": 0.625, "success_rate": 0.604, "reach_rate": 0.342,
 		"talk_time": oas.Object{"total_seconds": 7420, "average_seconds": 124, "longest_seconds": 431},

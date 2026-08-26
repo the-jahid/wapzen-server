@@ -76,7 +76,13 @@ type KnowledgeBase struct {
 	// chunks (the pinecone_namespace column). It is assigned at creation, so
 	// every knowledge base created through this API has one; the pointer covers
 	// rows predating that, which the backfill migration has since filled in.
-	NamespaceID            *string               `json:"namespace_id,omitempty" example:"kb_a456426614174000"`
+	NamespaceID *string `json:"namespace_id,omitempty" example:"kb_a456426614174000"`
+	// AgentID is the agent this knowledge base belongs to, or null while it
+	// belongs to none. Read-only here: a knowledge base is attached by writing
+	// the owning agent's knowledge_base.knowledge_base_ids, so the fact has one
+	// write path rather than two that can disagree. It is returned so a client
+	// can see which bases are already spoken for before it tries to attach one.
+	AgentID                *string               `json:"agent_id" example:"agent_12345"`
 	Sources                []KnowledgeBaseSource `json:"knowledge_base_sources,omitempty"`
 	EnableAutoRefresh      bool                  `json:"enable_auto_refresh" example:"false"`
 	LastRefreshedTimestamp *int64                `json:"last_refreshed_timestamp,omitempty" example:"1703413636133"`

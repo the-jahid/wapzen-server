@@ -2,7 +2,8 @@
 // tools table. A tool row only defines the action — which endpoint to hit, which
 // number to hand the caller to, what message to send. It does nothing until an
 // agent is attached to it, which is the agents package's half of the feature
-// (agent_tools); this package owns the definitions themselves.
+// (the tools.agent_id column, written by the agent's tools.tool_ids); this
+// package owns the definitions themselves.
 //
 // The type-specific settings are stored as JSON in one column. The variants
 // share almost no fields and are replaced wholesale rather than merged, so the
@@ -40,7 +41,7 @@ const uniqueViolation = "23505"
 // reads them. Shared by every query that returns a row so a schema change is
 // made in one place.
 const toolColumns = `
-	id, user_id, type, tool_name, description, config, created_at, updated_at
+	id, user_id, agent_id, type, tool_name, description, config, created_at, updated_at
 `
 
 type dbQuerier interface {
@@ -255,9 +256,10 @@ func updatedConfig(toolType string, params models.ToolUpdate) any {
 // ErrNotFound when no such tool exists for that user, so deleting somebody
 // else's reads the same as deleting one that never existed.
 //
-// The agent_tools rows pointing at it cascade, so the tool is detached from
-// every agent using it by the same statement. A call already in progress keeps
-// the definitions it started with — it resolved them when it was answered.
+// The agent that owns it, if any, loses it by the same statement: the owner is
+// the row's own agent_id, so there is nothing left behind to detach. A call
+// already in progress keeps the definitions it started with — it resolved them
+// when it was answered.
 func (r *Repository) DeleteByUser(ctx context.Context, userID, id string) error {
 	const query = `DELETE FROM tools WHERE id = $1 AND user_id = $2`
 	tag, err := r.db.Exec(ctx, query, id, userID)
@@ -296,6 +298,7 @@ func scanTool(row rowScanner) (models.Tool, error) {
 	if err := row.Scan(
 		&tool.ID,
 		&tool.UserID,
+		&tool.AgentID,
 		&tool.Type,
 		&tool.Name,
 		&tool.Description,

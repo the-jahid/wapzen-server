@@ -276,7 +276,7 @@ func deleteKnowledgeBaseOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteKnowledgeBase",
 		"summary":     "Delete Knowledge Base",
-		"description": "Deletes a knowledge base by id, scoped to the authenticated API key owner, together with all of its indexed sources and every vector written under its namespace.",
+		"description": "Deletes a knowledge base by id, scoped to the authenticated API key owner, together with all of its indexed sources and every vector written under its namespace. A knowledge base belongs to at most one agent, so the agent holding it — if any — simply stops answering from it.",
 		"security":    apiKeySecurity(),
 		"parameters":  []any{knowledgeBaseIDParam()},
 		"responses": oas.Object{

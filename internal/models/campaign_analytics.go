@@ -27,7 +27,7 @@ type CampaignAnalytics struct {
 
 	// PickupRate is answered calls over calls placed; SuccessRate is calls that
 	// were answered and then ended normally over calls placed; ReachRate is the
-	// share of leads that have been contacted. All three are 0 when their
+	// share of leads that have been called. All three are 0 when their
 	// denominator is, rather than NaN.
 	PickupRate  float64 `json:"pickup_rate" example:"0.62"`
 	SuccessRate float64 `json:"success_rate" example:"0.28"`
@@ -49,12 +49,11 @@ type CampaignAnalytics struct {
 
 // CampaignLeadTotals counts the campaign's leads by lifecycle status.
 type CampaignLeadTotals struct {
-	Total     int `json:"total" example:"120"`
-	Pending   int `json:"pending" example:"64"`
-	Calling   int `json:"calling" example:"2"`
-	Contacted int `json:"contacted" example:"41"`
-	Failed    int `json:"failed" example:"11"`
-	OptedOut  int `json:"opted_out" example:"2"`
+	Total   int `json:"total" example:"120"`
+	Pending int `json:"pending" example:"64"`
+	Calling int `json:"calling" example:"2"`
+	Called  int `json:"called" example:"43"`
+	Failed  int `json:"failed" example:"11"`
 }
 
 // CampaignCallTotals counts the campaign's calls by lifecycle status, plus the
@@ -103,6 +102,6 @@ func (a *CampaignAnalytics) ApplyDerivedRates() {
 		a.SuccessRate = roundRate(float64(a.Calls.Successful) / float64(a.Calls.Total))
 	}
 	if a.Leads.Total > 0 {
-		a.ReachRate = roundRate(float64(a.Leads.Contacted) / float64(a.Leads.Total))
+		a.ReachRate = roundRate(float64(a.Leads.Called) / float64(a.Leads.Total))
 	}
 }

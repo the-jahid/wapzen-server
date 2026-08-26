@@ -25,12 +25,6 @@ var STTModeOptions = []string{"fast", "accurate"}
 // STTMode is the union of STTModeOptions.
 type STTMode = string
 
-// PostCallFieldTypeOptions are the data types of post-call analysis fields.
-var PostCallFieldTypeOptions = []string{"string", "number", "boolean", "enum"}
-
-// PostCallFieldType is the union of PostCallFieldTypeOptions.
-type PostCallFieldType = string
-
 // ResourceStatusOptions are the lifecycle states of an agent resource.
 var ResourceStatusOptions = []string{"active", "inactive"}
 

@@ -139,7 +139,7 @@ func listOutboundCampaignsOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listOutboundCampaigns",
 		"summary":     "List Outbound Campaigns",
-		"description": "Returns a paginated list of the outbound campaigns owned by the authenticated API key owner, newest first, each with its current counters. `today_calls` is reported as 0 for any campaign whose `today_calls_date` is not today, so a listing never shows yesterday's activity as today's.",
+		"description": "Returns a paginated list of the outbound campaigns owned by the authenticated API key owner, newest first, each with its current counters.",
 		"security":    apiKeySecurity(),
 		"parameters":  []any{pageParam(), limitParam(), statusParam()},
 		"responses": oas.Object{

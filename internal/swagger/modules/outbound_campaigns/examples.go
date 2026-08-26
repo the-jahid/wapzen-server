@@ -24,7 +24,6 @@ func newCampaignExample() oas.Object {
 		"answered_calls":      0,
 		"successful_calls":    0,
 		"today_calls":         0,
-		"today_calls_date":    nil,
 		"total_usage_seconds": 0,
 		"pickup_rate":         0,
 		"success_rate":        0,
@@ -51,7 +50,6 @@ func runningCampaignExample() oas.Object {
 	c["answered_calls"] = 412
 	c["successful_calls"] = 188
 	c["today_calls"] = 37
-	c["today_calls_date"] = "2026-08-10"
 	c["total_usage_seconds"] = 74520
 	c["pickup_rate"] = 0.628
 	c["success_rate"] = 0.287

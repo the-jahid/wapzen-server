@@ -51,11 +51,12 @@ func resp401() oas.Object {
 }
 
 func resp404() oas.Object {
-	return errJSON("Not found — no agent exists with the given id, or a referenced phone number or knowledge base does not exist.", examples.NotFoundErrorExample)
+	return errJSON("Not found — no agent exists with the given id, or a referenced phone number, knowledge base or tool does not exist.", examples.NotFoundErrorExample)
 }
 
 func resp409() oas.Object {
-	return errJSON("Conflict — the agent name or phone-number direction assignment is already in use.", examples.ConflictErrorExample)
+	return errJSON("Conflict — the agent name, the phone-number direction assignment, or a knowledge base or tool "+
+		"the request attaches is already in use by another agent.", examples.ConflictErrorExample)
 }
 
 func resp422() oas.Object {
@@ -176,7 +177,7 @@ func createAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "createAgent",
 		"summary":     "Create Agent",
-		"description": "Creates a new outbound agent owned by the authenticated API key owner from the supplied configuration. If `agent.phone_number_id` is set, the phone number must belong to the user and must not already be assigned to another agent. Every id in `knowledge_base.knowledge_base_ids` must reference a knowledge base owned by the same user.",
+		"description": "Creates a new outbound agent owned by the authenticated API key owner from the supplied configuration. If `agent.phone_number_id` is set, the phone number must belong to the user and must not already be assigned to another agent. Every id in `knowledge_base.knowledge_base_ids` must reference a knowledge base owned by the same user, and every id in `tools.tool_ids` a tool owned by the same user.",
 		"security":    apiKeySecurity(),
 		"requestBody": requestBody("The agent configuration to create.", "CreateAgentRequest", examples.CreateAgentRequestExample),
 		"responses": oas.Object{
@@ -216,7 +217,7 @@ func updateAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "updateAgent",
 		"summary":     "Update Agent",
-		"description": "Applies a partial update to an existing outbound agent owned by the authenticated API key owner. Only the supplied fields are changed. Assigning `agent.phone_number_id` is rejected (409) when another agent already uses that phone number. Sending `knowledge_base.knowledge_base_ids` replaces the agent's attachments wholesale; omitting it leaves them untouched.",
+		"description": "Applies a partial update to an existing outbound agent owned by the authenticated API key owner. Only the supplied fields are changed. Assigning `agent.phone_number_id` is rejected (409) when another agent already uses that phone number. Sending `knowledge_base.knowledge_base_ids` or `tools.tool_ids` replaces that attachment set wholesale; omitting a section leaves it untouched.",
 		"security":    apiKeySecurity(),
 		"parameters":  []any{agentIDParam()},
 		"requestBody": requestBody("The fields to change.", "UpdateAgentRequest", examples.UpdateAgentRequestExample),
@@ -238,7 +239,12 @@ func deleteAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteAgent",
 		"summary":     "Delete Agent",
-		"description": "Deletes an agent by id, scoped to the authenticated API key owner, together with its dynamic variables and post-call analysis fields.",
+		"description": "Deletes an agent by id, scoped to the authenticated API key owner. A knowledge base or " +
+			"tool belongs to the agent that attached it, so this deletes them too — the knowledge bases with " +
+			"their sources and every vector indexed under their namespaces, and the tools with their " +
+			"configuration. Detach anything worth keeping first, by removing its id from the agent's " +
+			"`knowledge_base.knowledge_base_ids` or `tools.tool_ids`. Any phone number assigned to the agent is " +
+			"released rather than deleted.",
 		"security":    apiKeySecurity(),
 		"parameters":  []any{agentIDParam()},
 		"responses": oas.Object{

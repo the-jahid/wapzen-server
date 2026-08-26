@@ -39,7 +39,7 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	r := chi.NewRouter()
 	webhookHandler := handlers.NewWebhookHandler(deps.UsersRepo, deps.ClerkWebhookSigningSecret)
-	agentHandler := handlers.NewAgentHandler(deps.AgentsRepo, deps.WhatsAppLoginManager)
+	agentHandler := handlers.NewAgentHandler(deps.AgentsRepo, deps.WhatsAppLoginManager, deps.KnowledgeBaseIndexer)
 	userHandler := handlers.NewUserHandler()
 	apiKeyHandler := handlers.NewAPIKeyHandler(deps.APIKeysRepo)
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(

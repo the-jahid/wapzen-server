@@ -21,7 +21,8 @@ func createAgentRequestProperties() oas.Object {
 		P("voice", voiceSectionSchema()).
 		P("transcriber", transcriberSectionSchema()).
 		P("post_call", postCallSectionSchema()).
-		P("knowledge_base", knowledgeBaseSectionSchema())
+		P("knowledge_base", knowledgeBaseSectionSchema()).
+		P("tools", toolsSectionSchema())
 	return root.Properties()
 }
 
@@ -57,9 +58,7 @@ func promptSectionSchema() *oas.Schema {
 			Min(0).Max(5000).Default(1000).Example(1000)).
 		P("system_prompt", oas.Str().Desc("System prompt that defines the agent's persona and instructions.").
 			Default("You are a helpful, friendly voice assistant on a phone call. Keep responses clear and concise, speak naturally, and stay polite and professional at all times.").
-			Example("You are a helpful, friendly voice assistant on a phone call. Keep responses clear and concise, speak naturally, and stay polite and professional at all times.")).
-		P("dynamic_variables", oas.MapOf(oas.Str()).Desc("Free-form key/value pairs interpolated into prompts at runtime.").
-			Default(map[string]string{}).Example(map[string]string{}))
+			Example("You are a helpful, friendly voice assistant on a phone call. Keep responses clear and concise, speak naturally, and stay polite and professional at all times."))
 }
 
 func voiceSectionSchema() *oas.Schema {
@@ -75,7 +74,7 @@ func voiceSectionSchema() *oas.Schema {
 			P("voice_model", oas.Str().Desc("OpenAI Audio Speech model used for live calls.").Enum(constants.VoiceModelOpenAIOptions).Default("tts-1").Example("tts-1")).
 			P("realtime_model", oas.Str().Desc("Native speech-to-speech model used when voice.provider is openai_realtime.").Enum(constants.OpenAIRealtimeModelOptions).Default("gpt-realtime-2.1-mini").Example("gpt-realtime-2.1-mini")).
 			P("instructions", oas.Str().Nullable().Desc("Style/delivery instructions for the OpenAI voice.").Example(nil)).
-			P("speed", oas.Num().Desc("Spoken rate; 1 is the model's normal pace.").Min(0.25).Max(4).Default(1).Example(1)).
+			P("speed", oas.Num().Desc("Spoken rate; 1 is the model's normal pace.").Min(0.25).Max(1.5).Default(1).Example(1)).
 			P("volume", oas.Num().Desc("Playback gain applied to the agent's audio; 1 leaves it unchanged.").Min(0).Max(2).Default(1).Example(1)))
 }
 
@@ -86,23 +85,13 @@ func transcriberSectionSchema() *oas.Schema {
 		P("openai", oas.Obj().Desc("OpenAI-specific transcription settings.").
 			P("model", oas.Str().Desc("OpenAI transcription model.").Enum(constants.TranscriberModelOpenAIOptions).Default("gpt-4o-transcribe").Example("gpt-4o-transcribe"))).
 		P("elevenlabs", oas.Obj().Desc("ElevenLabs-specific transcription settings.").
-			P("model", oas.Str().Desc("ElevenLabs transcription model.").Enum(constants.TranscriberModelElevenLabsOptions).Default("scribe_v2").Example("scribe_v2")))
+			P("model", oas.Str().Desc("ElevenLabs transcription model.").Enum(constants.TranscriberModelElevenLabsOptions).Default("scribe_v1").Example("scribe_v1")))
 }
 
 func postCallSectionSchema() *oas.Schema {
-	return oas.Obj().Desc("Post-call analysis extraction.").
+	return oas.Obj().Desc("Post-call analysis settings stored on the agent.").
 		P("analysis_provider", oas.Str().Desc("LLM provider used for post-call analysis.").Enum(constants.LLMProviderOptions).Default("openai").Example("openai")).
-		P("analysis_model", oas.Str().Nullable().Desc("Model used for post-call analysis.").Example(nil)).
-		P("post_call_analysis_data", oas.Arr(
-			oas.Obj().Desc("A single value to extract after the call.").
-				P("type", oas.Str().Desc("Data type of the extracted value.").Enum(constants.PostCallFieldTypeOptions).Example("string")).
-				P("name", oas.Str().Desc("Field name.").Example("customer_name")).
-				P("description", oas.Str().Desc("What the field captures.").Example("The caller's full name as stated during the call.")).
-				P("examples", oas.Arr(oas.Str()).Desc("Example values.").Example([]string{})).
-				P("required", oas.Bool().Desc("Whether the field must be extracted.").Default(false).Example(false)).
-				P("enum_values", oas.Arr(oas.Str()).Desc("Allowed values when type is enum.").Example([]string{})).
-				P("conditional_prompt", oas.Str().Nullable().Desc("Optional prompt used only when a condition holds.").Example(nil)),
-		).Desc("Schema of values to extract from each call."))
+		P("analysis_model", oas.Str().Nullable().Desc("Provider-specific model used for post-call analysis.").Example(nil))
 }
 
 func knowledgeBaseSectionSchema() *oas.Schema {
@@ -111,6 +100,16 @@ func knowledgeBaseSectionSchema() *oas.Schema {
 			Desc("Ids of the attached knowledge bases. The list is the complete attachment set: sending it replaces the current attachments, and [] detaches all of them.").
 			Default([]string{}).
 			Example([]string{"knowledge_base_a456426614174000"}))
+}
+
+// toolsSectionSchema documents the tools the agent may call mid-call. Like the
+// knowledge-base ids, the list is the whole attachment set.
+func toolsSectionSchema() *oas.Schema {
+	return oas.Obj().Desc("Tools this agent may call during a call. Each id must reference a tool owned by the same user; an unknown id is rejected with 404.").
+		P("tool_ids", oas.Arr(oas.Str().Example("tool_12345")).
+			Desc("Ids of the attached tools. The list is the complete attachment set: sending it replaces the current attachments, and [] detaches all of them.").
+			Default([]string{}).
+			Example([]string{"tool_12345"}))
 }
 
 // ---------------------------------------------------------------------------

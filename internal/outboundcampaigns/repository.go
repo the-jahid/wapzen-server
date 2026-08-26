@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -47,7 +46,7 @@ const uniqueViolation = "23505"
 const campaignColumns = `
 	c.id, c.user_id, c.campaign_name, c.status, c.budget_usd,
 	c.leads_count, c.calls_placed, c.answered_calls, c.successful_calls,
-	c.today_calls, c.today_calls_date, c.total_usage_seconds,
+	c.today_calls, c.total_usage_seconds,
 	c.started_at, c.completed_at, c.created_at, c.updated_at,
 	c.agent_id, a.agent_name, a.phone_number_id, p.phone_number
 `
@@ -69,14 +68,11 @@ type dbQuerier interface {
 // Repository owns persistence for the outbound_campaigns table.
 type Repository struct {
 	db dbQuerier
-	// now is the clock used to stamp lifecycle timestamps and to decide whether
-	// today_calls is stale. It is a field so tests can pin it.
-	now func() time.Time
 }
 
 // NewRepository creates an outbound campaign repository backed by pgxpool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{db: pool, now: time.Now}
+	return &Repository{db: pool}
 }
 
 // Create inserts a campaign owned by params.UserID and returns the stored row.
@@ -282,10 +278,7 @@ type rowScanner interface {
 // leaving this package carries its rates and a today's counter that is only
 // reported when it is actually today's.
 func (r *Repository) scanCampaign(row rowScanner) (models.OutboundCampaign, error) {
-	var (
-		campaign       models.OutboundCampaign
-		todayCallsDate *time.Time
-	)
+	var campaign models.OutboundCampaign
 	if err := row.Scan(
 		&campaign.ID,
 		&campaign.UserID,
@@ -297,7 +290,6 @@ func (r *Repository) scanCampaign(row rowScanner) (models.OutboundCampaign, erro
 		&campaign.AnsweredCalls,
 		&campaign.SuccessfulCalls,
 		&campaign.TodayCalls,
-		&todayCallsDate,
 		&campaign.TotalUsageSeconds,
 		&campaign.StartedAt,
 		&campaign.CompletedAt,
@@ -310,10 +302,6 @@ func (r *Repository) scanCampaign(row rowScanner) (models.OutboundCampaign, erro
 	); err != nil {
 		return models.OutboundCampaign{}, err
 	}
-	if todayCallsDate != nil {
-		formatted := todayCallsDate.Format("2006-01-02")
-		campaign.TodayCallsDate = &formatted
-	}
-	campaign.ApplyDerivedFields(r.now())
+	campaign.ApplyDerivedFields()
 	return campaign, nil
 }

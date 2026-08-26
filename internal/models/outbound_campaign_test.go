@@ -1,9 +1,6 @@
 package models
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestCanTransitionCampaignStatus(t *testing.T) {
 	tests := []struct {
@@ -38,8 +35,6 @@ func TestCanTransitionCampaignStatus(t *testing.T) {
 // TestApplyDerivedFieldsRates pins the two rates to the counters they come
 // from, including the zero-call case that would otherwise be a division by zero.
 func TestApplyDerivedFieldsRates(t *testing.T) {
-	today := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
-
 	tests := []struct {
 		name            string
 		campaign        OutboundCampaign
@@ -77,42 +72,13 @@ func TestApplyDerivedFieldsRates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			campaign := tt.campaign
-			campaign.ApplyDerivedFields(today)
+			campaign.ApplyDerivedFields()
 
 			if campaign.PickupRate != tt.wantPickupRate {
 				t.Errorf("pickup_rate = %v, want %v", campaign.PickupRate, tt.wantPickupRate)
 			}
 			if campaign.SuccessRate != tt.wantSuccessRate {
 				t.Errorf("success_rate = %v, want %v", campaign.SuccessRate, tt.wantSuccessRate)
-			}
-		})
-	}
-}
-
-// TestApplyDerivedFieldsTodayCalls pins the staleness rule: a counter is only
-// reported when the day it counts is today.
-func TestApplyDerivedFieldsTodayCalls(t *testing.T) {
-	today := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
-	yesterday := "2026-08-09"
-	todayStr := "2026-08-10"
-
-	tests := []struct {
-		name string
-		date *string
-		want int
-	}{
-		{name: "counted today", date: &todayStr, want: 37},
-		{name: "left over from yesterday", date: &yesterday, want: 0},
-		{name: "never dialled", date: nil, want: 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			campaign := OutboundCampaign{TodayCalls: 37, TodayCallsDate: tt.date}
-			campaign.ApplyDerivedFields(today)
-
-			if campaign.TodayCalls != tt.want {
-				t.Errorf("today_calls = %d, want %d", campaign.TodayCalls, tt.want)
 			}
 		})
 	}

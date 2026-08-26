@@ -3,21 +3,20 @@ package models
 import "time"
 
 const (
-	CampaignLeadStatusPending   = "pending"
-	CampaignLeadStatusCalling   = "calling"
-	CampaignLeadStatusContacted = "contacted"
-	CampaignLeadStatusFailed    = "failed"
-	CampaignLeadStatusOptedOut  = "opted_out"
-	CampaignLeadMaxNameLength   = 80
+	CampaignLeadStatusPending = "pending"
+	CampaignLeadStatusCalling = "calling"
+	CampaignLeadStatusCalled  = "called"
+	CampaignLeadStatusFailed  = "failed"
+	CampaignLeadMaxNameLength = 80
 )
 
 func CampaignLeadStatuses() []string {
-	return []string{CampaignLeadStatusPending, CampaignLeadStatusCalling, CampaignLeadStatusContacted, CampaignLeadStatusFailed, CampaignLeadStatusOptedOut}
+	return []string{CampaignLeadStatusPending, CampaignLeadStatusCalling, CampaignLeadStatusCalled, CampaignLeadStatusFailed}
 }
 
 func IsValidCampaignLeadStatus(status string) bool {
 	switch status {
-	case CampaignLeadStatusPending, CampaignLeadStatusCalling, CampaignLeadStatusContacted, CampaignLeadStatusFailed, CampaignLeadStatusOptedOut:
+	case CampaignLeadStatusPending, CampaignLeadStatusCalling, CampaignLeadStatusCalled, CampaignLeadStatusFailed:
 		return true
 	default:
 		return false

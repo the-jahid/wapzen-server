@@ -187,8 +187,9 @@ func deleteToolOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteTool",
 		"summary":     "Delete Tool",
-		"description": "Deletes a tool owned by the authenticated user and detaches it from every agent using it. " +
-			"Calls already in progress keep the tool for the rest of the call.",
+		"description": "Deletes a tool owned by the authenticated user. A tool belongs to at most one agent, so " +
+			"the agent holding it — if any — simply loses it. Calls already in progress keep the tool for the " +
+			"rest of the call.",
 		"security":   apiKeySecurity(),
 		"parameters": []any{toolIDParam()},
 		"responses": oas.Object{

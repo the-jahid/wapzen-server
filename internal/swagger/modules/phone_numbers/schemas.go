@@ -46,7 +46,7 @@ func phoneNumberResourceSchema() oas.Object {
 		P("phone_number", nullablePhoneNumberFieldSchema()).
 		P("label", nullableLabelFieldSchema()).
 		P("wa_jid", oas.Str().Nullable().Desc("WhatsApp device JID stored after pairing.").Example("15551234567:1@s.whatsapp.net")).
-		P("status", oas.Str().Desc("WhatsApp login lifecycle status.").Enum([]string{"pending_qr", "connected", "disconnected", "failed", "expired"}).Example("pending_qr")).
+		P("status", oas.Str().Desc("WhatsApp login lifecycle status.").Enum([]string{"pending_qr", "connected", "disconnected"}).Example("pending_qr")).
 		P("qr_code", qrCodeFieldSchema()).
 		P("last_connected_at", oas.Str().Format("date-time").Nullable().Desc("Most recent successful WhatsApp connection timestamp.").Example("2026-07-03T10:00:00Z")).
 		P("created_at", oas.Str().Format("date-time").Desc("Creation timestamp.").Example("2026-07-03T10:00:00Z")).

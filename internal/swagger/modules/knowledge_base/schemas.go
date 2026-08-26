@@ -184,6 +184,7 @@ func knowledgeBaseResourceSchema() oas.Object {
 		P("knowledge_base_name", knowledgeBaseNameSchema()).
 		P("status", oas.Str().Desc("Indexing status of the knowledge base.").Enum(knowledgeBaseStatusOptions).Example("in_progress")).
 		P("namespace_id", oas.Str().Desc("Vector-store namespace holding this knowledge base's chunks. Assigned when the knowledge base is created and stable for its lifetime.").Example("kb_a456426614174000")).
+		P("agent_id", oas.Str().Nullable().Desc("Agent this knowledge base belongs to, or null while it belongs to none. Read-only here: attach a knowledge base by writing the owning agent's `knowledge_base.knowledge_base_ids`. A knowledge base belongs to one agent, so a non-null value means attaching it elsewhere is rejected with 409 until it is detached here. Deleting that agent deletes this knowledge base with it.").Example(nil)).
 		P("knowledge_base_sources", oas.Arr(oas.Ref("KnowledgeBaseSource")).Desc("The indexed sources. Populated once status is complete.")).
 		P("enable_auto_refresh", enableAutoRefreshSchema()).
 		P("last_refreshed_timestamp", oas.Int().Desc("Last refresh time, in milliseconds since epoch. Only present when auto refresh is enabled.").Example(1703413636133)).

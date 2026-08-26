@@ -3,10 +3,10 @@
 // the examples cannot drift from the field names/structure they illustrate.
 //
 // Every field here is backed by a real column in the agents schema (including
-// later agent migrations): scalar fields are columns on `agents`, dynamic_variables lives in
-// `agent_dynamic_variables`, post_call_analysis_data in
-// `agent_post_call_fields`, and knowledge_base_ids in `agent_knowledge_bases`.
-// The docs intentionally advertise nothing the database does not persist.
+// later agent migrations): scalar fields are columns on `agents`,
+// knowledge_base_ids is the set of `knowledge_bases` rows pointing back at the
+// agent and tool_ids the set of `tools` rows doing the same. The docs
+// intentionally advertise nothing the database does not persist.
 package types
 
 import "whatsapp-ai-caller-server/internal/swagger/modules/agents/constants"
@@ -47,7 +47,6 @@ type PromptSection struct {
 	BeginMessage        string                     `json:"begin_message,omitempty"`
 	BeginMessageDelayMs int                        `json:"begin_message_delay_ms,omitempty"`
 	SystemPrompt        string                     `json:"system_prompt,omitempty"`
-	DynamicVariables    map[string]string          `json:"dynamic_variables"`
 }
 
 // VoiceSection selects the live-call pipeline and its provider-specific voice.
@@ -95,11 +94,12 @@ type TranscriberElevenLabs struct {
 	Model constants.TranscriberModel `json:"model,omitempty"`
 }
 
-// PostCallSection configures post-call analysis extraction.
+// PostCallSection configures the scalar post-call analysis settings persisted
+// directly on agents. The former list of extraction fields is intentionally not
+// exposed because it is not part of the current schema.
 type PostCallSection struct {
-	AnalysisProvider     constants.LLMProvider `json:"analysis_provider,omitempty"`
-	AnalysisModel        *string               `json:"analysis_model"`
-	PostCallAnalysisData []PostCallField       `json:"post_call_analysis_data,omitempty"`
+	AnalysisProvider constants.LLMProvider `json:"analysis_provider,omitempty"`
+	AnalysisModel    *string               `json:"analysis_model"`
 }
 
 // KnowledgeBaseSection lists the knowledge bases the agent may answer from. The
@@ -120,15 +120,4 @@ type KnowledgeBaseSection struct {
 // attachments, and an empty list detaches every tool.
 type ToolsSection struct {
 	ToolIDs []string `json:"tool_ids"`
-}
-
-// PostCallField describes a single value to extract after the call.
-type PostCallField struct {
-	Type              constants.PostCallFieldType `json:"type"`
-	Name              string                      `json:"name"`
-	Description       string                      `json:"description,omitempty"`
-	Examples          []string                    `json:"examples"`
-	Required          bool                        `json:"required"`
-	EnumValues        []string                    `json:"enum_values"`
-	ConditionalPrompt *string                     `json:"conditional_prompt"`
 }

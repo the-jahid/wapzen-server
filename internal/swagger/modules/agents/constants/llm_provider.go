@@ -1,8 +1,8 @@
 package constants
 
-// LLMProviderOptions is the set of allowed LLM provider values (used by the
-// model and post_call_analysis providers).
-var LLMProviderOptions = []string{"openai", "anthropic", "google", "azure_openai", "custom"}
+// LLMProviderOptions is the set accepted by both model_provider and
+// post_call_analysis_provider in the agents schema.
+var LLMProviderOptions = []string{"openai", "anthropic"}
 
 // LLMProvider is the union of LLMProviderOptions.
 type LLMProvider = string

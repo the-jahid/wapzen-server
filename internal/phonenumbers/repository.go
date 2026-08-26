@@ -122,8 +122,7 @@ func (r *Repository) ListConnected(ctx context.Context) ([]models.PhoneNumber, e
 
 // ListResumable returns every phone number that still has valid stored WhatsApp
 // credentials worth reconnecting on startup: both currently-connected rows and
-// rows that merely lost their live socket (disconnected). Rows in failed/expired
-// never had a working device, so they are intentionally excluded.
+// rows that lost their live socket (disconnected).
 func (r *Repository) ListResumable(ctx context.Context) ([]models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
@@ -230,11 +229,11 @@ func (r *Repository) ResetForRePair(ctx context.Context, userID, phoneNumberID s
 }
 
 func (r *Repository) MarkFailed(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {
-	return r.markStatus(ctx, userID, phoneNumberID, models.PhoneNumberStatusFailed)
+	return r.markStatus(ctx, userID, phoneNumberID, models.PhoneNumberStatusDisconnected)
 }
 
 func (r *Repository) MarkExpired(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {
-	return r.markStatus(ctx, userID, phoneNumberID, models.PhoneNumberStatusExpired)
+	return r.markStatus(ctx, userID, phoneNumberID, models.PhoneNumberStatusDisconnected)
 }
 
 func (r *Repository) MarkDisconnected(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {

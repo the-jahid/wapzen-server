@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -25,17 +27,53 @@ type inboundCallRefresher interface {
 	RefreshInboundCallHandling(phoneNumberID string)
 }
 
+// namespacePurger deletes a knowledge base's vectors from the vector store.
+// Satisfied by *knowledgebases.Indexer. Deleting an agent now cascades to the
+// knowledge bases it owns, and the rows going away does not take their vectors
+// with them — this is how the handler cleans up after the cascade. May be nil,
+// and reports Enabled() false when indexing is not configured; in either case
+// the delete still succeeds and the namespaces are simply left in place.
+type namespacePurger interface {
+	Enabled() bool
+	PurgeNamespace(ctx context.Context, kb models.KnowledgeBase) error
+}
+
 // AgentHandler handles agent CRUD endpoints.
 type AgentHandler struct {
 	repo    *agents.Repository
 	inbound inboundCallRefresher
+	indexer namespacePurger
 }
 
 // NewAgentHandler creates an agent handler with its dependencies. inbound may be
 // nil to disable the auto-reconnect that applies phone-number assignment changes
-// to a running WhatsApp session.
-func NewAgentHandler(repo *agents.Repository, inbound inboundCallRefresher) *AgentHandler {
-	return &AgentHandler{repo: repo, inbound: inbound}
+// to a running WhatsApp session; indexer may be nil to skip purging the vector
+// namespaces of the knowledge bases a deleted agent takes with it.
+func NewAgentHandler(repo *agents.Repository, inbound inboundCallRefresher, indexer namespacePurger) *AgentHandler {
+	return &AgentHandler{repo: repo, inbound: inbound, indexer: indexer}
+}
+
+// purgeKnowledgeBaseNamespaces deletes the vectors of knowledge bases that have
+// just been removed by an agent delete.
+//
+// Best effort, like the knowledge-base delete endpoint's own purge: the rows are
+// already gone, so a namespace that could not be dropped is logged rather than
+// turned into a failed delete. It leaves vectors nothing can reach, not a
+// half-deleted agent.
+func (h *AgentHandler) purgeKnowledgeBaseNamespaces(ctx context.Context, bases []models.AgentKnowledgeBase) {
+	if h.indexer == nil || !h.indexer.Enabled() {
+		return
+	}
+	for _, base := range bases {
+		namespace := base.Namespace
+		if namespace == "" {
+			continue
+		}
+		kb := models.KnowledgeBase{ID: base.ID, NamespaceID: &namespace}
+		if err := h.indexer.PurgeNamespace(ctx, kb); err != nil {
+			log.Printf("agent delete: purging vector namespace for knowledge base %s failed: %v", base.ID, err)
+		}
+	}
 }
 
 // refreshInbound reconnects each distinct, non-blank phone number so its
@@ -185,7 +223,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 //
 // Get godoc
 // @Summary      Get Agent
-// @Description  Returns a single agent owned by the authenticated user, including its dynamic variables, post-call analysis fields and attached knowledge base ids.
+// @Description  Returns a single agent owned by the authenticated user, including its attached knowledge base and tool ids.
 // @Tags         agents
 // @Produce      json
 // @Security     BearerAuth
@@ -236,11 +274,13 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete removes the agent named by the agent_id path parameter, together with
-// its child collections (cascaded by the schema).
+// the knowledge bases and tools it owns (cascaded by the schema) and the vectors
+// those knowledge bases had indexed (purged here, since no cascade reaches the
+// vector store).
 //
 // Delete godoc
 // @Summary      Delete Agent
-// @Description  Deletes an agent owned by the authenticated user. The agent's dynamic variables and post-call analysis fields are removed with it.
+// @Description  Deletes an agent owned by the authenticated user. A knowledge base or tool belongs to the agent that attached it, so this deletes them too — the knowledge bases with their sources and every vector indexed under their namespaces, and the tools with their configuration. Detach anything worth keeping first by removing its id from the agent's knowledge_base.knowledge_base_ids or tools.tool_ids. Any phone number assigned to the agent is released rather than deleted.
 // @Tags         agents
 // @Produce      json
 // @Security     BearerAuth
@@ -270,6 +310,13 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	// removed afterward (deleting the agent leaves the number unassigned).
 	assignedPhone, _ := h.repo.PhoneNumberIDForAgent(r.Context(), user.ID, agentID)
 
+	// And the namespaces of the knowledge bases the delete is about to cascade
+	// to, which are unreachable once their rows are gone. Read here rather than
+	// after the delete for that reason; nothing is purged unless the delete
+	// below actually succeeds, so a failed or unauthorized delete touches no
+	// vectors.
+	doomedBases, _ := h.repo.KnowledgeBasesForAgent(r.Context(), agentID)
+
 	if err := h.repo.Delete(r.Context(), user.ID, agentID); err != nil {
 		if errors.Is(err, agents.ErrAgentNotFound) {
 			writeJSON(w, http.StatusNotFound, models.APIResponse{
@@ -286,6 +333,7 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.refreshInbound(assignedPhone)
+	h.purgeKnowledgeBaseNamespaces(r.Context(), doomedBases)
 
 	writeJSON(w, http.StatusOK, types.SuccessEnvelope{
 		Success: true,
@@ -433,6 +481,16 @@ func writeAgentAssignmentError(w http.ResponseWriter, err error) bool {
 		// The error carries the offending id, which matters when the request
 		// attached several knowledge bases or tools at once.
 		writeJSON(w, http.StatusNotFound, models.APIResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return true
+	case errors.Is(err, agents.ErrKnowledgeBaseAttachmentConflict), errors.Is(err, agents.ErrToolAttachmentConflict):
+		// A knowledge base or tool belongs to one agent, so taking one that is
+		// already another agent's is refused rather than silently detaching it
+		// there — the same 409 a phone number already assigned elsewhere gets.
+		// The message carries the offending id.
+		writeJSON(w, http.StatusConflict, models.APIResponse{
 			Success: false,
 			Message: err.Error(),
 		})

@@ -2,7 +2,7 @@ package outbound_campaigns
 
 import "whatsapp-ai-caller-server/internal/swagger/oas"
 
-var campaignLeadStatusOptions = []string{"pending", "calling", "contacted", "failed", "opted_out"}
+var campaignLeadStatusOptions = []string{"pending", "calling", "called", "failed"}
 
 func campaignLeadPhoneSchema() oas.Object {
 	return oas.Object{"type": "string", "description": "Lead phone number in E.164 format. Unique within the campaign.", "pattern": `^\+[1-9][0-9]{7,14}$`, "example": "+14155550123"}
@@ -94,11 +94,10 @@ func deleteCampaignLeadResponseSchema() oas.Object {
 // leads and its calls rather than read off the campaign's stored counters.
 func campaignAnalyticsSchema() oas.Object {
 	leadTotals := oas.Obj().Desc("Leads by lifecycle status.").
-		Req("total", "pending", "calling", "contacted", "failed", "opted_out").
+		Req("total", "pending", "calling", "called", "failed").
 		P("total", oas.Int().Example(120)).P("pending", oas.Int().Example(64)).
 		P("calling", oas.Int().Desc("Leads on a live call right now.").Example(2)).
-		P("contacted", oas.Int().Example(41)).P("failed", oas.Int().Example(11)).
-		P("opted_out", oas.Int().Example(2))
+		P("called", oas.Int().Example(43)).P("failed", oas.Int().Example(11))
 
 	callTotals := oas.Obj().Desc("Calls by lifecycle status, plus the two counts that cut across them.").
 		Req("total", "received", "answered", "ended", "declined", "failed", "connected", "successful").
@@ -129,7 +128,7 @@ func campaignAnalyticsSchema() oas.Object {
 		P("leads", leadTotals).P("calls", callTotals).
 		P("pickup_rate", oas.Num().Desc("Connected calls over calls placed. 0 when none were placed.").Example(0.62)).
 		P("success_rate", oas.Num().Desc("Successful calls over calls placed.").Example(0.28)).
-		P("reach_rate", oas.Num().Desc("Contacted leads over total leads.").Example(0.41)).
+		P("reach_rate", oas.Num().Desc("Called leads over total leads.").Example(0.41)).
 		P("talk_time", talkTime).P("daily", daily).P("end_reasons", endReasons).
 		P("first_call_at", oas.Str().Format("date-time").Nullable().Example("2026-08-10T10:00:00Z")).
 		P("last_call_at", oas.Str().Format("date-time").Nullable().Example("2026-08-14T16:20:00Z")).Build()

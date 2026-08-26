@@ -39,15 +39,14 @@ func (r *Repository) Analytics(ctx context.Context, userID, campaignID string, d
 			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1),
 			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'pending'),
 			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'calling'),
-			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'contacted'),
-			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'failed'),
-			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'opted_out')`
+			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'called'),
+			(SELECT count(*) FROM campaign_leads WHERE campaign_id = $1 AND status = 'failed')`
 
 	var owned bool
 	leads := &analytics.Leads
 	if err := r.db.QueryRow(ctx, leadsQuery, campaignID, userID).Scan(
 		&owned, &leads.Total, &leads.Pending, &leads.Calling,
-		&leads.Contacted, &leads.Failed, &leads.OptedOut,
+		&leads.Called, &leads.Failed,
 	); err != nil {
 		return models.CampaignAnalytics{}, fmt.Errorf("campaign lead analytics: %w", err)
 	}

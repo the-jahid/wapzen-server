@@ -19,14 +19,14 @@ func TestApplyDerivedRates(t *testing.T) {
 			name: "rates come from the counts",
 			analytics: CampaignAnalytics{
 				Calls: CampaignCallTotals{Total: 96, Connected: 60, Successful: 58},
-				Leads: CampaignLeadTotals{Total: 120, Contacted: 41},
+				Leads: CampaignLeadTotals{Total: 120, Called: 41},
 			},
 			wantPickup: 0.625, wantSuccess: 0.604, wantReach: 0.342,
 		},
 		{
 			name: "leads without calls still report reach",
 			analytics: CampaignAnalytics{
-				Leads: CampaignLeadTotals{Total: 4, Contacted: 1},
+				Leads: CampaignLeadTotals{Total: 4, Called: 1},
 			},
 			wantReach: 0.25,
 		},

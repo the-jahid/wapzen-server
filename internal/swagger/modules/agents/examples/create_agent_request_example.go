@@ -24,7 +24,6 @@ var CreateAgentRequestExample = types.CreateAgentRequest{
 		BeginMessage:        "Hello! How can I help you today?",
 		BeginMessageDelayMs: 1000,
 		SystemPrompt:        "You are a helpful, friendly voice assistant on a phone call. Keep responses clear and concise, speak naturally, and stay polite and professional at all times.",
-		DynamicVariables: map[string]string{},
 	},
 	Voice: &types.VoiceSection{
 		Provider: "openai_realtime",
@@ -44,24 +43,16 @@ var CreateAgentRequestExample = types.CreateAgentRequest{
 		Provider:   "openai",
 		Language:   "en",
 		OpenAI:     &types.TranscriberOpenAI{Model: "gpt-4o-transcribe"},
-		ElevenLabs: &types.TranscriberElevenLabs{Model: "scribe_v2"},
-	},
-	KnowledgeBase: &types.KnowledgeBaseSection{
-		KnowledgeBaseIDs: []string{"knowledge_base_a456426614174000"},
+		ElevenLabs: &types.TranscriberElevenLabs{Model: "scribe_v1"},
 	},
 	PostCall: &types.PostCallSection{
 		AnalysisProvider: "openai",
 		AnalysisModel:    nil,
-		PostCallAnalysisData: []types.PostCallField{
-			{
-				Type:              "string",
-				Name:              "customer_name",
-				Description:       "The caller's full name as stated during the call.",
-				Examples:          []string{},
-				Required:          false,
-				EnumValues:        []string{},
-				ConditionalPrompt: nil,
-			},
-		},
+	},
+	KnowledgeBase: &types.KnowledgeBaseSection{
+		KnowledgeBaseIDs: []string{"knowledge_base_a456426614174000"},
+	},
+	Tools: &types.ToolsSection{
+		ToolIDs: []string{"tool_12345"},
 	},
 }

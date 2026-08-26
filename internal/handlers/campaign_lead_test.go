@@ -33,7 +33,7 @@ func TestDecodeCreateCampaignLeadRequest(t *testing.T) {
 		{"missing phone", `{"email":"maya@example.com"}`, false, []string{"phone_number"}},
 		{"invalid email", `{"phone_number":"+14155550123","email":"bad"}`, false, []string{"email"}},
 		{"read only", `{"phone_number":"+14155550123","attempts":2}`, false, []string{"attempts"}},
-		{"create status is server managed", `{"phone_number":"+14155550123","status":"contacted"}`, false, []string{"status"}},
+		{"create status is server managed", `{"phone_number":"+14155550123","status":"called"}`, false, []string{"status"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -64,8 +64,8 @@ func TestDecodeUpdateCampaignLeadRequestClearsOptionalFields(t *testing.T) {
 }
 
 func TestParseCampaignLeadListQuery(t *testing.T) {
-	page, limit, status, errs := parseCampaignLeadListQuery(url.Values{"page": {"2"}, "limit": {"50"}, "status": {"contacted"}})
-	if page != 2 || limit != 50 || status != "contacted" || len(errs) != 0 {
+	page, limit, status, errs := parseCampaignLeadListQuery(url.Values{"page": {"2"}, "limit": {"50"}, "status": {"called"}})
+	if page != 2 || limit != 50 || status != "called" || len(errs) != 0 {
 		t.Fatalf("got %d %d %q %#v", page, limit, status, errs)
 	}
 }

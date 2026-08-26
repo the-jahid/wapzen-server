@@ -100,9 +100,6 @@ type OutboundCampaign struct {
 	TodayCalls        int `json:"today_calls" example:"37"`
 	TotalUsageSeconds int `json:"total_usage_seconds" example:"74520"`
 
-	// TodayCallsDate is the day TodayCalls counts, as a plain YYYY-MM-DD date.
-	TodayCallsDate *string `json:"today_calls_date" example:"2026-08-10"`
-
 	// PickupRate and SuccessRate are derived from the counters by
 	// ApplyDerivedFields rather than stored, so they can never disagree with the
 	// numbers they come from.
@@ -115,17 +112,12 @@ type OutboundCampaign struct {
 	UpdatedAt   time.Time  `json:"updated_at" example:"2026-08-10T11:15:00Z"`
 }
 
-// ApplyDerivedFields computes the two rates and clears a stale today's counter.
+// ApplyDerivedFields computes the two rates from the stored counters.
 //
 // It runs on every row leaving the repository, so the API is consistent no
 // matter which query loaded the row. The rates are 0 — not NaN — for a campaign
-// that has placed no calls, and today_calls reports 0 once its date is no longer
-// today, since a counter left over from yesterday is not today's activity.
-func (c *OutboundCampaign) ApplyDerivedFields(today time.Time) {
-	if c.TodayCallsDate == nil || *c.TodayCallsDate != today.Format("2006-01-02") {
-		c.TodayCalls = 0
-	}
-
+// that has placed no calls.
+func (c *OutboundCampaign) ApplyDerivedFields() {
 	if c.CallsPlaced <= 0 {
 		c.PickupRate, c.SuccessRate = 0, 0
 		return

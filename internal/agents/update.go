@@ -21,14 +21,14 @@ func (e *InvalidRequestError) Error() string { return e.msg }
 
 // Update applies a partial update to the agent with the given id owned by
 // userID. Only the fields present in body are changed; absent fields keep
-// their stored value. The three child collections (dynamic variables,
-// post-call analysis fields and knowledge base attachments) are replaced
-// wholesale when their key is present, and left untouched when it is absent. It
+// their stored value. The two attachment sets (knowledge bases and tools) are
+// replaced wholesale when their key is present, and left untouched when it is
+// absent. It
 // returns ErrAgentNotFound when no agent has the given id — including when the
 // agent belongs to another user — and an *InvalidRequestError when the body
 // cannot be interpreted.
 func (r *Repository) Update(ctx context.Context, userID, agentID string, body []byte) (types.AgentResource, error) {
-	set, dynVars, postCall, knowledgeBases, toolIDs, err := parseAgentUpdate(body)
+	set, knowledgeBases, toolIDs, err := parseAgentUpdate(body)
 	if err != nil {
 		return types.AgentResource{}, err
 	}
@@ -39,7 +39,7 @@ func (r *Repository) Update(ctx context.Context, userID, agentID string, body []
 	}
 	defer tx.Rollback(ctx)
 
-	childChanged := dynVars != nil || postCall != nil || knowledgeBases != nil || toolIDs != nil
+	childChanged := knowledgeBases != nil || toolIDs != nil
 
 	// Load the persisted scalar row (post-update) and confirm the agent exists.
 	var row agentRow
@@ -98,16 +98,6 @@ func (r *Repository) Update(ctx context.Context, userID, agentID string, body []
 		}
 	}
 
-	if dynVars != nil {
-		if err := replaceDynamicVariables(ctx, tx, agentID, *dynVars); err != nil {
-			return types.AgentResource{}, err
-		}
-	}
-	if postCall != nil {
-		if err := replacePostCallFields(ctx, tx, agentID, *postCall); err != nil {
-			return types.AgentResource{}, err
-		}
-	}
 	if knowledgeBases != nil {
 		if err := r.resolveKnowledgeBaseAttachments(ctx, tx, userID, agentID, *knowledgeBases); err != nil {
 			return types.AgentResource{}, err
@@ -127,16 +117,8 @@ func (r *Repository) Update(ctx context.Context, userID, agentID string, body []
 		return types.AgentResource{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	// Re-read the child collections so the response reflects their persisted
-	// state whether or not this request replaced them.
-	dynamicVars, err := r.getDynamicVariables(ctx, agentID)
-	if err != nil {
-		return types.AgentResource{}, err
-	}
-	postCallData, err := r.getPostCallFields(ctx, agentID)
-	if err != nil {
-		return types.AgentResource{}, err
-	}
+	// Re-read the attachments so the response reflects their persisted state
+	// whether or not this request replaced them.
 	knowledgeBaseIDs, err := r.getKnowledgeBaseIDs(ctx, agentID)
 	if err != nil {
 		return types.AgentResource{}, err
@@ -146,35 +128,7 @@ func (r *Repository) Update(ctx context.Context, userID, agentID string, body []
 		return types.AgentResource{}, err
 	}
 
-	return buildResource(row, dynamicVars, postCallData, knowledgeBaseIDs, attachedToolIDs), nil
-}
-
-// replaceDynamicVariables swaps an agent's dynamic-variable set for the supplied
-// map, deleting any previous entries first. An empty map clears them all.
-func replaceDynamicVariables(ctx context.Context, tx pgx.Tx, agentID string, vars map[string]string) error {
-	if _, err := tx.Exec(ctx, `DELETE FROM agent_dynamic_variables WHERE agent_id = $1`, agentID); err != nil {
-		return fmt.Errorf("delete dynamic variables: %w", err)
-	}
-	for name, value := range vars {
-		if err := insertDynamicVariable(ctx, tx, agentID, name, value); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// replacePostCallFields swaps an agent's post-call analysis fields for the
-// supplied list, deleting any previous fields first. An empty list clears them.
-func replacePostCallFields(ctx context.Context, tx pgx.Tx, agentID string, fields []types.PostCallField) error {
-	if _, err := tx.Exec(ctx, `DELETE FROM agent_post_call_fields WHERE agent_id = $1`, agentID); err != nil {
-		return fmt.Errorf("delete post-call fields: %w", err)
-	}
-	for _, f := range fields {
-		if err := insertPostCallField(ctx, tx, agentID, f); err != nil {
-			return err
-		}
-	}
-	return nil
+	return buildResource(row, knowledgeBaseIDs, attachedToolIDs), nil
 }
 
 // rawFields is one JSON object level left undecoded, so presence of a key can be
@@ -267,13 +221,13 @@ func setOptionalTrimmedString(u *updateSet, fields rawFields, key, col string) {
 }
 
 // parseAgentUpdate maps a partial-update JSON body onto scalar column
-// assignments plus the four optional child collections. A non-nil dynVars,
-// postCall, knowledgeBases or tools means "replace this collection" (even when
-// the map/list is empty); nil means "leave it unchanged".
-func parseAgentUpdate(body []byte) (*updateSet, *map[string]string, *[]types.PostCallField, *[]string, *[]string, error) {
+// assignments plus the two optional attachment sets. A non-nil knowledgeBases
+// or tools means "replace this set" (even when the list is empty); nil means
+// "leave it unchanged".
+func parseAgentUpdate(body []byte) (*updateSet, *[]string, *[]string, error) {
 	var top rawFields
 	if err := json.Unmarshal(body, &top); err != nil {
-		return nil, nil, nil, nil, nil, &InvalidRequestError{"request body must be a JSON object"}
+		return nil, nil, nil, &InvalidRequestError{"request body must be a JSON object"}
 	}
 
 	u := &updateSet{}
@@ -318,24 +272,22 @@ func parseAgentUpdate(body []byte) (*updateSet, *map[string]string, *[]types.Pos
 	setScalar[string](u, u.sub(transcriber, "openai"), "model", "transcriber_openai_model")
 	setScalar[string](u, u.sub(transcriber, "elevenlabs"), "model", "transcriber_elevenlabs_model")
 
-	postCallSec := u.sub(top, "post_call")
-	setScalar[string](u, postCallSec, "analysis_provider", "post_call_analysis_provider")
-	setScalar[*string](u, postCallSec, "analysis_model", "post_call_analysis_model")
+	postCall := u.sub(top, "post_call")
+	setScalar[string](u, postCall, "analysis_provider", "post_call_analysis_provider")
+	setScalar[*string](u, postCall, "analysis_model", "post_call_analysis_model")
 
 	knowledgeBaseSec := u.sub(top, "knowledge_base")
 	toolsSec := u.sub(top, "tools")
 
-	// Child collections: a present key (even null) means "replace"; absent means
+	// Attachment sets: a present key (even null) means "replace"; absent means
 	// "leave unchanged".
-	dynVars := parseChild[map[string]string](u, prompt, "dynamic_variables")
-	postCall := parseChild[[]types.PostCallField](u, postCallSec, "post_call_analysis_data")
 	knowledgeBases := parseChild[[]string](u, knowledgeBaseSec, "knowledge_base_ids")
 	toolIDs := parseChild[[]string](u, toolsSec, "tool_ids")
 
 	if u.err != nil {
-		return nil, nil, nil, nil, nil, u.err
+		return nil, nil, nil, u.err
 	}
-	return u, dynVars, postCall, knowledgeBases, toolIDs, nil
+	return u, knowledgeBases, toolIDs, nil
 }
 
 // parseChild decodes an optional child collection. It returns a non-nil pointer

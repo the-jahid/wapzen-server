@@ -40,13 +40,14 @@ func urlSourceExample() oas.Object {
 
 // knowledgeBaseExample is a freshly created knowledge base: the namespace is
 // already assigned, but indexing is still running, so knowledge_base_sources is
-// not populated yet.
+// not populated yet, and no agent has attached it yet, so agent_id is null.
 func knowledgeBaseExample() oas.Object {
 	return oas.Object{
 		"knowledge_base_id":        "knowledge_base_a456426614174000",
 		"knowledge_base_name":      "Sample KB",
 		"status":                   "in_progress",
 		"namespace_id":             "kb_a456426614174000",
+		"agent_id":                 nil,
 		"max_chunk_size":           2000,
 		"min_chunk_size":           400,
 		"enable_auto_refresh":      true,

@@ -11,7 +11,13 @@ var UpdateAgentRequestExample = map[string]any{
 	"model": map[string]any{
 		"temperature": 0.4,
 	},
+	"post_call": map[string]any{
+		"analysis_model": "gpt-4.1-mini",
+	},
 	"knowledge_base": map[string]any{
 		"knowledge_base_ids": []string{"knowledge_base_a456426614174000"},
+	},
+	"tools": map[string]any{
+		"tool_ids": []string{"tool_12345"},
 	},
 }

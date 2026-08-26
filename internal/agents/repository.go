@@ -10,11 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"whatsapp-ai-caller-server/internal/swagger/modules/agents/constants"
 	"whatsapp-ai-caller-server/internal/swagger/modules/agents/types"
 )
 
-// Repository owns persistence for agents and their child tables.
+// Repository owns persistence for agents and their attachments.
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -41,8 +40,8 @@ const returningColumns = `
 	post_call_analysis_provider, post_call_analysis_model
 `
 
-// Create inserts a new agent owned by userID together with its dynamic variables
-// and post-call analysis fields, all within a single transaction. Only the
+// Create inserts a new agent owned by userID, together with its knowledge base
+// and tool attachments, all within a single transaction. Only the
 // columns present in req are written; everything else falls back to its schema
 // default (see migration 00002), so Go zero-values never clobber a DB default.
 func (r *Repository) Create(ctx context.Context, userID string, req types.CreateAgentRequest) (types.AgentResource, error) {
@@ -198,10 +197,6 @@ func (r *Repository) Create(ctx context.Context, userID string, req types.Create
 		return types.AgentResource{}, fmt.Errorf("insert agent: %w", err)
 	}
 
-	if err := r.insertChildren(ctx, tx, row.ID, req); err != nil {
-		return types.AgentResource{}, err
-	}
-
 	knowledgeBaseIDs := requestKnowledgeBaseIDs(req)
 	if err := r.resolveKnowledgeBaseAttachments(ctx, tx, userID, row.ID, knowledgeBaseIDs); err != nil {
 		return types.AgentResource{}, err
@@ -216,18 +211,7 @@ func (r *Repository) Create(ctx context.Context, userID string, req types.Create
 		return types.AgentResource{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	// The child collections were just persisted from req, so echo them back
-	// rather than re-reading them.
-	var dynamicVars map[string]string
-	var postCallData []types.PostCallField
-	if req.Prompt != nil {
-		dynamicVars = req.Prompt.DynamicVariables
-	}
-	if req.PostCall != nil {
-		postCallData = req.PostCall.PostCallAnalysisData
-	}
-
-	return buildResource(row, dynamicVars, postCallData, knowledgeBaseIDs, toolIDs), nil
+	return buildResource(row, knowledgeBaseIDs, toolIDs), nil
 }
 
 // requestKnowledgeBaseIDs returns the knowledge base ids a create request
@@ -260,8 +244,8 @@ var ErrPhoneNumberNotFound = errors.New("phone number not found")
 // the requested phone number.
 var ErrPhoneNumberAssignmentConflict = errors.New("phone number already assigned for call direction")
 
-// GetByID loads a single agent owned by userID together with its child
-// collections (dynamic variables and post-call analysis fields). It returns
+// GetByID loads a single agent owned by userID together with its knowledge
+// base and tool attachments. It returns
 // ErrAgentNotFound when no agent has the given id — including when the agent
 // exists but belongs to another user, so ownership never leaks.
 func (r *Repository) GetByID(ctx context.Context, userID, agentID string) (types.AgentResource, error) {
@@ -275,16 +259,6 @@ func (r *Repository) GetByID(ctx context.Context, userID, agentID string) (types
 		return types.AgentResource{}, fmt.Errorf("select agent: %w", err)
 	}
 
-	dynamicVars, err := r.getDynamicVariables(ctx, agentID)
-	if err != nil {
-		return types.AgentResource{}, err
-	}
-
-	postCallData, err := r.getPostCallFields(ctx, agentID)
-	if err != nil {
-		return types.AgentResource{}, err
-	}
-
 	knowledgeBaseIDs, err := r.getKnowledgeBaseIDs(ctx, agentID)
 	if err != nil {
 		return types.AgentResource{}, err
@@ -295,7 +269,7 @@ func (r *Repository) GetByID(ctx context.Context, userID, agentID string) (types
 		return types.AgentResource{}, err
 	}
 
-	return buildResource(row, dynamicVars, postCallData, knowledgeBaseIDs, toolIDs), nil
+	return buildResource(row, knowledgeBaseIDs, toolIDs), nil
 }
 
 // InboundAgent is the minimal agent configuration needed to answer an inbound
@@ -512,74 +486,9 @@ func (r *Repository) LookupPhoneNumberForAgent(ctx context.Context, userID, agen
 	return phoneNumberID, true, nil
 }
 
-// getDynamicVariables reads the string→string map stored in
-// agent_dynamic_variables. It returns nil (not an empty map) when the agent has
-// no variables, matching how Create echoes an absent map.
-func (r *Repository) getDynamicVariables(ctx context.Context, agentID string) (map[string]string, error) {
-	const q = `SELECT name, value FROM agent_dynamic_variables WHERE agent_id = $1`
-	rows, err := r.pool.Query(ctx, q, agentID)
-	if err != nil {
-		return nil, fmt.Errorf("select dynamic variables: %w", err)
-	}
-	defer rows.Close()
-
-	var vars map[string]string
-	for rows.Next() {
-		var name, value string
-		if err := rows.Scan(&name, &value); err != nil {
-			return nil, fmt.Errorf("scan dynamic variable: %w", err)
-		}
-		if vars == nil {
-			vars = make(map[string]string)
-		}
-		vars[name] = value
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate dynamic variables: %w", err)
-	}
-	return vars, nil
-}
-
-// getPostCallFields reads the ordered list of post-call analysis fields from
-// agent_post_call_fields. Nullable columns scan through pointers so SQL NULLs
-// map to the zero value rather than erroring.
-func (r *Repository) getPostCallFields(ctx context.Context, agentID string) ([]types.PostCallField, error) {
-	const q = `
-		SELECT type, name, description, examples, required, enum_values, conditional_prompt
-		FROM agent_post_call_fields
-		WHERE agent_id = $1
-		ORDER BY id`
-	rows, err := r.pool.Query(ctx, q, agentID)
-	if err != nil {
-		return nil, fmt.Errorf("select post-call fields: %w", err)
-	}
-	defer rows.Close()
-
-	var fields []types.PostCallField
-	for rows.Next() {
-		var (
-			f           types.PostCallField
-			fieldType   string
-			description *string
-		)
-		if err := rows.Scan(
-			&fieldType, &f.Name, &description, &f.Examples, &f.Required, &f.EnumValues, &f.ConditionalPrompt,
-		); err != nil {
-			return nil, fmt.Errorf("scan post-call field: %w", err)
-		}
-		f.Type = constants.PostCallFieldType(fieldType)
-		f.Description = deref(description)
-		fields = append(fields, f)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate post-call fields: %w", err)
-	}
-	return fields, nil
-}
-
 // List returns a page of the agents owned by userID ordered newest-first,
 // together with the total number of matching agents (for pagination metadata).
-// Child collections are loaded in bulk for the whole page to avoid a per-agent
+// Attachments are loaded in bulk for the whole page to avoid a per-agent
 // query fan-out.
 func (r *Repository) List(ctx context.Context, userID string, limit, offset int) ([]types.AgentResource, int, error) {
 	var total int
@@ -617,14 +526,6 @@ func (r *Repository) List(ctx context.Context, userID string, limit, offset int)
 		return nil, 0, fmt.Errorf("iterate agents: %w", err)
 	}
 
-	dynamicVars, err := r.getDynamicVariablesForAgents(ctx, ids)
-	if err != nil {
-		return nil, 0, err
-	}
-	postCallData, err := r.getPostCallFieldsForAgents(ctx, ids)
-	if err != nil {
-		return nil, 0, err
-	}
 	knowledgeBaseIDs, err := r.getKnowledgeBaseIDsForAgents(ctx, ids)
 	if err != nil {
 		return nil, 0, err
@@ -636,90 +537,21 @@ func (r *Repository) List(ctx context.Context, userID string, limit, offset int)
 
 	resources := make([]types.AgentResource, len(agentRows))
 	for i, row := range agentRows {
-		resources[i] = buildResource(row, dynamicVars[row.ID], postCallData[row.ID], knowledgeBaseIDs[row.ID], toolIDs[row.ID])
+		resources[i] = buildResource(row, knowledgeBaseIDs[row.ID], toolIDs[row.ID])
 	}
 	return resources, total, nil
 }
 
-// getDynamicVariablesForAgents loads the dynamic-variable maps for every agent
-// id in one query, grouped by agent id. Agents with no variables are simply
-// absent from the result (buildResource then receives a nil map, matching the
-// single-agent read path).
-func (r *Repository) getDynamicVariablesForAgents(ctx context.Context, agentIDs []string) (map[string]map[string]string, error) {
-	out := make(map[string]map[string]string)
-	if len(agentIDs) == 0 {
-		return out, nil
-	}
-	const q = `SELECT agent_id, name, value FROM agent_dynamic_variables WHERE agent_id = ANY($1)`
-	rows, err := r.pool.Query(ctx, q, agentIDs)
-	if err != nil {
-		return nil, fmt.Errorf("select dynamic variables: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var agentID, name, value string
-		if err := rows.Scan(&agentID, &name, &value); err != nil {
-			return nil, fmt.Errorf("scan dynamic variable: %w", err)
-		}
-		vars := out[agentID]
-		if vars == nil {
-			vars = make(map[string]string)
-			out[agentID] = vars
-		}
-		vars[name] = value
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate dynamic variables: %w", err)
-	}
-	return out, nil
-}
-
-// getPostCallFieldsForAgents loads the post-call analysis fields for every agent
-// id in one query, grouped by agent id. Ordering by (agent_id, id) keeps each
-// agent's fields in the same stable order as the single-agent read path.
-func (r *Repository) getPostCallFieldsForAgents(ctx context.Context, agentIDs []string) (map[string][]types.PostCallField, error) {
-	out := make(map[string][]types.PostCallField)
-	if len(agentIDs) == 0 {
-		return out, nil
-	}
-	const q = `
-		SELECT agent_id, type, name, description, examples, required, enum_values, conditional_prompt
-		FROM agent_post_call_fields
-		WHERE agent_id = ANY($1)
-		ORDER BY agent_id, id`
-	rows, err := r.pool.Query(ctx, q, agentIDs)
-	if err != nil {
-		return nil, fmt.Errorf("select post-call fields: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var (
-			agentID     string
-			f           types.PostCallField
-			fieldType   string
-			description *string
-		)
-		if err := rows.Scan(
-			&agentID, &fieldType, &f.Name, &description, &f.Examples, &f.Required, &f.EnumValues, &f.ConditionalPrompt,
-		); err != nil {
-			return nil, fmt.Errorf("scan post-call field: %w", err)
-		}
-		f.Type = constants.PostCallFieldType(fieldType)
-		f.Description = deref(description)
-		out[agentID] = append(out[agentID], f)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate post-call fields: %w", err)
-	}
-	return out, nil
-}
-
-// Delete removes the agent with the given id owned by userID. Its child rows
-// (dynamic variables and post-call analysis fields) are removed by the
-// schema's ON DELETE CASCADE. It returns ErrAgentNotFound when no agent has
-// the given id — including when the agent belongs to another user.
+// Delete removes the agent with the given id owned by userID. It returns
+// ErrAgentNotFound when no agent has the given id — including when the agent
+// belongs to another user.
+//
+// The knowledge bases and tools it owns go with it, by the ON DELETE CASCADE on
+// their agent_id: they are its property now, not links to shared rows, so this
+// destroys them rather than detaching them. What the cascade cannot reach is the
+// vector store — see the handler, which reads the doomed namespaces before
+// calling this and purges them after it succeeds. A phone number is only
+// referenced, so it is released (ON DELETE SET NULL) and survives.
 func (r *Repository) Delete(ctx context.Context, userID, agentID string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE id = $1 AND user_id = $2`, agentID, userID)
 	if err != nil {
@@ -727,51 +559,6 @@ func (r *Repository) Delete(ctx context.Context, userID, agentID string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrAgentNotFound
-	}
-	return nil
-}
-
-// insertChildren writes the two normalized child collections: the dynamic
-// variables map and the post-call analysis fields list.
-func (r *Repository) insertChildren(ctx context.Context, tx pgx.Tx, agentID string, req types.CreateAgentRequest) error {
-	if req.Prompt != nil {
-		for name, value := range req.Prompt.DynamicVariables {
-			if err := insertDynamicVariable(ctx, tx, agentID, name, value); err != nil {
-				return err
-			}
-		}
-	}
-
-	if req.PostCall != nil {
-		for _, f := range req.PostCall.PostCallAnalysisData {
-			if err := insertPostCallField(ctx, tx, agentID, f); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// insertDynamicVariable writes a single row into agent_dynamic_variables.
-func insertDynamicVariable(ctx context.Context, tx pgx.Tx, agentID, name, value string) error {
-	const q = `INSERT INTO agent_dynamic_variables (agent_id, name, value) VALUES ($1, $2, $3)`
-	if _, err := tx.Exec(ctx, q, agentID, name, value); err != nil {
-		return fmt.Errorf("insert dynamic variable %q: %w", name, err)
-	}
-	return nil
-}
-
-// insertPostCallField writes a single row into agent_post_call_fields.
-func insertPostCallField(ctx context.Context, tx pgx.Tx, agentID string, f types.PostCallField) error {
-	const q = `
-		INSERT INTO agent_post_call_fields
-			(agent_id, type, name, description, examples, required, enum_values, conditional_prompt)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
-	if _, err := tx.Exec(ctx, q,
-		agentID, f.Type, f.Name, f.Description, f.Examples, f.Required, f.EnumValues, f.ConditionalPrompt,
-	); err != nil {
-		return fmt.Errorf("insert post-call field %q: %w", f.Name, err)
 	}
 	return nil
 }
@@ -841,16 +628,13 @@ func scanAgentRow(row rowScanner, dst *agentRow) error {
 }
 
 // buildResource assembles the documented AgentResource from the persisted
-// scalar row plus its child collections (dynamic variables, post-call analysis
-// fields, knowledge base attachments and tool attachments).
+// scalar row plus its attachments (knowledge bases and tools).
 //
 // knowledgeBaseIDs and toolIDs are normalized to empty slices so an agent with
 // nothing attached renders [] rather than null — the difference would otherwise
 // read as "unknown" to a client, and there is no such state.
 func buildResource(
 	row agentRow,
-	dynamicVars map[string]string,
-	postCallData []types.PostCallField,
 	knowledgeBaseIDs []string,
 	toolIDs []string,
 ) types.AgentResource {
@@ -883,7 +667,6 @@ func buildResource(
 				BeginMessage:        deref(row.PromptBeginMessage),
 				BeginMessageDelayMs: deref(row.PromptBeginMessageDelayMs),
 				SystemPrompt:        deref(row.PromptSystemPrompt),
-				DynamicVariables:    dynamicVars,
 			},
 			Voice: &types.VoiceSection{
 				Provider: deref(row.VoiceProvider),
@@ -909,9 +692,8 @@ func buildResource(
 				ElevenLabs: &types.TranscriberElevenLabs{Model: row.TranscriberElevenlabsModel},
 			},
 			PostCall: &types.PostCallSection{
-				AnalysisProvider:     row.PostCallAnalysisProvider,
-				AnalysisModel:        row.PostCallAnalysisModel,
-				PostCallAnalysisData: postCallData,
+				AnalysisProvider: row.PostCallAnalysisProvider,
+				AnalysisModel:    row.PostCallAnalysisModel,
 			},
 			KnowledgeBase: &types.KnowledgeBaseSection{
 				KnowledgeBaseIDs: knowledgeBaseIDs,

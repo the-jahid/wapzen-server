@@ -7,8 +7,6 @@ const (
 	PhoneNumberStatusPendingQR    = "pending_qr"
 	PhoneNumberStatusConnected    = "connected"
 	PhoneNumberStatusDisconnected = "disconnected"
-	PhoneNumberStatusFailed       = "failed"
-	PhoneNumberStatusExpired      = "expired"
 )
 
 // PhoneNumber is a WhatsApp device login owned by one application user.

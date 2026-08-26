@@ -47,7 +47,7 @@ func CreateDefaultWithQuerier(ctx context.Context, q rowQuerier, userID string) 
 // List returns active API keys for a user ordered newest-first.
 func (r *Repository) List(ctx context.Context, userID string) ([]models.APIKey, error) {
 	const query = `
-		SELECT id, name, is_default, key_prefix, last4, last_used_at, created_at, updated_at
+		SELECT id, name, is_default, key_prefix, last_used_at, created_at, updated_at
 		FROM api_keys
 		WHERE user_id = $1 AND revoked_at IS NULL
 		ORDER BY created_at DESC, id DESC
@@ -101,7 +101,7 @@ func (r *Repository) SetDefault(ctx context.Context, userID, keyID string) (mode
 		UPDATE api_keys
 		SET is_default = true, updated_at = now()
 		WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
-		RETURNING id, name, is_default, key_prefix, last4, last_used_at, created_at, updated_at
+		RETURNING id, name, is_default, key_prefix, last_used_at, created_at, updated_at
 	`
 
 	key, err := scanAPIKey(tx.QueryRow(ctx, updateQuery, keyID, userID))
@@ -212,12 +212,12 @@ func createWithQuerier(ctx context.Context, q rowQuerier, userID, name string, i
 	}
 
 	const query = `
-		INSERT INTO api_keys (user_id, name, is_default, key_hash, key_prefix, last4)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, is_default, key_prefix, last4, last_used_at, created_at, updated_at
+		INSERT INTO api_keys (user_id, name, is_default, key_hash, key_prefix)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, is_default, key_prefix, last_used_at, created_at, updated_at
 	`
 
-	meta, err := scanAPIKey(q.QueryRow(ctx, query, userID, normalizeName(name), isDefault, Hash(key), publicPrefix(key), last4(key)))
+	meta, err := scanAPIKey(q.QueryRow(ctx, query, userID, normalizeName(name), isDefault, Hash(key), publicIdentifier(key)))
 	if err != nil {
 		return models.CreatedAPIKey{}, fmt.Errorf("create api key: %w", err)
 	}
@@ -325,17 +325,18 @@ func promoteNewestActiveKey(ctx context.Context, tx pgx.Tx, userID string) error
 
 func scanAPIKey(row rowScanner) (models.APIKey, error) {
 	var key models.APIKey
+	var storedPrefix string
 	if err := row.Scan(
 		&key.ID,
 		&key.Name,
 		&key.IsDefault,
-		&key.KeyPrefix,
-		&key.Last4,
+		&storedPrefix,
 		&key.LastUsedAt,
 		&key.CreatedAt,
 		&key.UpdatedAt,
 	); err != nil {
 		return models.APIKey{}, err
 	}
+	key.KeyPrefix, key.Last4 = splitPublicIdentifier(storedPrefix)
 	return key, nil
 }

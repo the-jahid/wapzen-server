@@ -60,6 +60,23 @@ func publicPrefix(key string) string {
 	return key[:12]
 }
 
+// publicIdentifier is the non-secret display form stored in key_prefix. The
+// current schema has no separate last4 column, so keeping both safe fragments
+// here preserves the API's masked-key display without persisting the bearer
+// secret itself.
+func publicIdentifier(key string) string {
+	return publicPrefix(key) + "..." + last4(key)
+}
+
+func splitPublicIdentifier(value string) (prefix, suffix string) {
+	parts := strings.SplitN(value, "...", 2)
+	prefix = parts[0]
+	if len(parts) == 2 {
+		suffix = parts[1]
+	}
+	return prefix, suffix
+}
+
 func last4(key string) string {
 	if len(key) <= 4 {
 		return key

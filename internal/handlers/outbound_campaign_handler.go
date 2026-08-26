@@ -929,7 +929,7 @@ func validateUpdateOutboundCampaignRequest(req updateOutboundCampaignRequest) []
 // chooses the number. agent_id, the one half a caller does set, is not.
 var readOnlyCampaignFields = []string{
 	"leads_count", "calls_placed", "answered_calls", "successful_calls",
-	"today_calls", "today_calls_date", "total_usage_seconds",
+	"today_calls", "total_usage_seconds",
 	"pickup_rate", "success_rate",
 	"agent_name", "phone_number_id", "phone_number",
 }

@@ -4,9 +4,6 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-
-	"whatsapp-ai-caller-server/internal/swagger/modules/agents/constants"
-	"whatsapp-ai-caller-server/internal/swagger/modules/agents/types"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -70,6 +67,12 @@ func TestParseAgentUpdateScalars(t *testing.T) {
 			wantArgs: []any{"gpt-realtime-2.1"},
 		},
 		{
+			name:     "post call scalar settings",
+			body:     `{"post_call":{"analysis_provider":"anthropic","analysis_model":null}}`,
+			wantCols: []string{"post_call_analysis_provider", "post_call_analysis_model"},
+			wantArgs: []any{"anthropic", (*string)(nil)},
+		},
+		{
 			name:     "null section is a no-op",
 			body:     `{"model":null}`,
 			wantCols: nil,
@@ -79,13 +82,13 @@ func TestParseAgentUpdateScalars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			set, dynVars, postCall, knowledgeBases, toolIDs, err := parseAgentUpdate([]byte(tt.body))
+			set, knowledgeBases, toolIDs, err := parseAgentUpdate([]byte(tt.body))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if dynVars != nil || postCall != nil || knowledgeBases != nil || toolIDs != nil {
-				t.Fatalf("expected no child collections, got dynVars=%v postCall=%v knowledgeBases=%v toolIDs=%v",
-					dynVars, postCall, knowledgeBases, toolIDs)
+			if knowledgeBases != nil || toolIDs != nil {
+				t.Fatalf("expected no attachment sets, got knowledgeBases=%v toolIDs=%v",
+					knowledgeBases, toolIDs)
 			}
 			if !reflect.DeepEqual(set.cols, tt.wantCols) {
 				t.Errorf("cols = %#v, want %#v", set.cols, tt.wantCols)
@@ -98,63 +101,12 @@ func TestParseAgentUpdateScalars(t *testing.T) {
 }
 
 // TestParseAgentUpdateChildPresence checks the "present means replace, absent
-// means leave unchanged" rule for the three child collections, including the
+// means leave unchanged" rule for the attachment sets, including the
 // empty-value (clear) case.
 func TestParseAgentUpdateChildPresence(t *testing.T) {
-	t.Run("dynamic_variables present replaces", func(t *testing.T) {
-		_, dynVars, _, _, _, err := parseAgentUpdate([]byte(`{"prompt":{"dynamic_variables":{"k":"v"}}}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if dynVars == nil {
-			t.Fatal("dynVars = nil, want non-nil pointer")
-		}
-		if !reflect.DeepEqual(*dynVars, map[string]string{"k": "v"}) {
-			t.Errorf("dynVars = %#v, want {k:v}", *dynVars)
-		}
-	})
-
-	t.Run("empty dynamic_variables clears", func(t *testing.T) {
-		_, dynVars, _, _, _, err := parseAgentUpdate([]byte(`{"prompt":{"dynamic_variables":{}}}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if dynVars == nil {
-			t.Fatal("dynVars = nil, want non-nil pointer signalling replace-with-empty")
-		}
-		if len(*dynVars) != 0 {
-			t.Errorf("dynVars = %#v, want empty", *dynVars)
-		}
-	})
-
-	t.Run("absent dynamic_variables leaves unchanged", func(t *testing.T) {
-		_, dynVars, _, _, _, err := parseAgentUpdate([]byte(`{"prompt":{"system_prompt":"x"}}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if dynVars != nil {
-			t.Errorf("dynVars = %#v, want nil (unchanged)", *dynVars)
-		}
-	})
-
-	t.Run("post_call_analysis_data present replaces", func(t *testing.T) {
-		body := `{"post_call":{"post_call_analysis_data":[{"type":"string","name":"summary"}]}}`
-		_, _, postCall, _, _, err := parseAgentUpdate([]byte(body))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if postCall == nil {
-			t.Fatal("postCall = nil, want non-nil pointer")
-		}
-		want := []types.PostCallField{{Type: constants.PostCallFieldType("string"), Name: "summary"}}
-		if !reflect.DeepEqual(*postCall, want) {
-			t.Errorf("postCall = %#v, want %#v", *postCall, want)
-		}
-	})
-
 	t.Run("knowledge_base_ids present replaces", func(t *testing.T) {
 		body := `{"knowledge_base":{"knowledge_base_ids":["kb_1","kb_2"]}}`
-		_, _, _, knowledgeBases, _, err := parseAgentUpdate([]byte(body))
+		_, knowledgeBases, _, err := parseAgentUpdate([]byte(body))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -169,7 +121,7 @@ func TestParseAgentUpdateChildPresence(t *testing.T) {
 	// An empty list is how the UI detaches every knowledge base, so it has to
 	// survive parsing as "replace with nothing" rather than "unchanged".
 	t.Run("empty knowledge_base_ids detaches all", func(t *testing.T) {
-		_, _, _, knowledgeBases, _, err := parseAgentUpdate([]byte(`{"knowledge_base":{"knowledge_base_ids":[]}}`))
+		_, knowledgeBases, _, err := parseAgentUpdate([]byte(`{"knowledge_base":{"knowledge_base_ids":[]}}`))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -182,7 +134,7 @@ func TestParseAgentUpdateChildPresence(t *testing.T) {
 	})
 
 	t.Run("absent knowledge_base leaves attachments unchanged", func(t *testing.T) {
-		_, _, _, knowledgeBases, _, err := parseAgentUpdate([]byte(`{"agent":{"name":"x"}}`))
+		_, knowledgeBases, _, err := parseAgentUpdate([]byte(`{"agent":{"name":"x"}}`))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -222,11 +174,11 @@ func TestParseAgentUpdateInvalid(t *testing.T) {
 		"not an object":      `"just a string"`,
 		"wrong scalar type":  `{"model":{"temperature":"hot"}}`,
 		"wrong section type": `{"agent":"nope"}`,
-		"wrong child type":   `{"prompt":{"dynamic_variables":[1,2,3]}}`,
+		"wrong child type":   `{"knowledge_base":{"knowledge_base_ids":"kb_1"}}`,
 	}
 	for name, body := range bodies {
 		t.Run(name, func(t *testing.T) {
-			_, _, _, _, _, err := parseAgentUpdate([]byte(body))
+			_, _, _, err := parseAgentUpdate([]byte(body))
 			var invalid *InvalidRequestError
 			if !errors.As(err, &invalid) {
 				t.Fatalf("err = %v, want *InvalidRequestError", err)

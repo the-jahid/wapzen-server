@@ -37,9 +37,12 @@ func createToolRequestExample() oas.Object {
 }
 
 // apiRequestToolExample is the stored resource the create example produces.
+// agent_id is null: creating a tool only defines it, and an agent claims it
+// afterwards by sending its tools.tool_ids.
 func apiRequestToolExample() oas.Object {
 	tool := createToolRequestExample()
 	tool["id"] = "tool_12345"
+	tool["agent_id"] = nil
 	tool["created_at"] = "2026-08-19T10:00:00Z"
 	tool["updated_at"] = "2026-08-19T10:00:00Z"
 	return tool
@@ -47,13 +50,16 @@ func apiRequestToolExample() oas.Object {
 
 // transferCallToolExample and endCallToolExample round out the list example, so
 // the collection shows what a tool with a different configuration block — and
-// one with none at all — looks like.
+// one with none at all — looks like. This one carries an agent_id, so the list
+// also shows the difference between a tool an agent has claimed and one still
+// free to attach.
 func transferCallToolExample() oas.Object {
 	return oas.Object{
 		"id":          "tool_23456",
 		"type":        ToolTypeTransferCall,
 		"name":        "transfer_to_human",
 		"description": "Transfer the caller to the support desk when they ask for a person.",
+		"agent_id":    "agent_12345",
 		"transfer_call": oas.Object{
 			"destination": "+8801639726992",
 			"message":     "Connecting you to a teammate now, one moment.",
@@ -69,6 +75,7 @@ func endCallToolExample() oas.Object {
 		"type":        ToolTypeEndCall,
 		"name":        "end_call",
 		"description": "Hang up politely once the caller says they are done.",
+		"agent_id":    nil,
 		"created_at":  "2026-08-19T10:10:00Z",
 		"updated_at":  "2026-08-19T10:10:00Z",
 	}

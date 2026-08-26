@@ -37,7 +37,7 @@ const uniqueViolation = "23505"
 // order scanKnowledgeBase reads them. Shared by every query that returns a row
 // so a schema change is made in one place.
 const knowledgeBaseColumns = `
-	id, user_id, knowledge_base_name, status, pinecone_namespace,
+	id, user_id, agent_id, knowledge_base_name, status, pinecone_namespace,
 	enable_auto_refresh, last_refreshed_at, max_chunk_size, min_chunk_size
 `
 
@@ -262,6 +262,7 @@ func scanKnowledgeBase(row rowScanner) (models.KnowledgeBase, error) {
 	if err := row.Scan(
 		&kb.ID,
 		&kb.UserID,
+		&kb.AgentID,
 		&kb.Name,
 		&kb.Status,
 		&kb.NamespaceID,
