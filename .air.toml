@@ -1,0 +1,44 @@
+# air watches this directory only. The meowcaller fork that go.mod `replace`s to
+# ../third_party/meowcaller sits outside that tree, so editing it does NOT trigger
+# a rebuild and the running server keeps the old library — silently. After any
+# change there, touch a file under server/ (or restart air) to pick it up.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -buildvcs=false -o ./tmp/api.exe ./cmd/api"
+entrypoint = ["./tmp/api.exe"]
+delay = 1000
+exclude_dir = ["tmp", "vendor", "docs"]
+exclude_file = []
+exclude_regex = ["_test.go"]
+exclude_unchanged = false
+follow_symlink = false
+include_dir = []
+include_ext = ["go", "env"]
+kill_delay = "5s"
+log = "air-build.log"
+poll = false
+poll_interval = 0
+rerun = false
+rerun_delay = 500
+send_interrupt = true
+stop_on_error = true
+
+[color]
+app = ""
+build = "yellow"
+main = "magenta"
+runner = "green"
+watcher = "cyan"
+
+[log]
+main_only = false
+time = true
+
+[misc]
+clean_on_exit = true
+
+[screen]
+clear_on_rebuild = true
+keep_scroll = true
