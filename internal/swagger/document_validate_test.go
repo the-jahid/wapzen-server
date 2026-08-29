@@ -81,6 +81,26 @@ func TestBuildDocumentStructure(t *testing.T) {
 			t.Errorf("/v1/agents/{agent_id} missing %s operation", m)
 		}
 	}
+	chatCollection, _ := paths["/v1/chat-agents"].(map[string]any)
+	if chatCollection == nil {
+		t.Fatal("path /v1/chat-agents not found")
+	}
+	for _, m := range []string{"get", "post"} {
+		if _, ok := chatCollection[m]; !ok {
+			t.Errorf("/v1/chat-agents missing %s operation", m)
+		}
+		assertOperationSecurity(t, chatCollection, m, "apiKeyBearer")
+	}
+	chatItem, _ := paths["/v1/chat-agents/{chat_agent_id}"].(map[string]any)
+	if chatItem == nil {
+		t.Fatal("path /v1/chat-agents/{chat_agent_id} not found")
+	}
+	for _, m := range []string{"get", "patch", "delete"} {
+		if _, ok := chatItem[m]; !ok {
+			t.Errorf("/v1/chat-agents/{chat_agent_id} missing %s operation", m)
+		}
+		assertOperationSecurity(t, chatItem, m, "apiKeyBearer")
+	}
 	phoneNumberCollection, _ := paths["/v1/phone-number"].(map[string]any)
 	if phoneNumberCollection == nil {
 		t.Fatal("path /v1/phone-number not found")
@@ -151,6 +171,8 @@ func TestBuildDocumentStructure(t *testing.T) {
 		"CreateAgentRequest", "UpdateAgentRequest", "AgentResource",
 		"CreateAgentResponse", "GetAgentResponse", "ListAgentsResponse",
 		"DeleteAgentResponse", "ErrorResponse",
+		"CreateChatAgentRequest", "UpdateChatAgentRequest", "ChatAgentResource",
+		"ChatAgentResponse", "ListChatAgentsResponse", "DeleteChatAgentResponse",
 		"APIKey", "CreatedAPIKey", "CreateAPIKeyRequest",
 		"ListAPIKeysResponse", "CreateAPIKeyResponse", "SetDefaultAPIKeyResponse", "RevokeAPIKeyResponse",
 		"PhoneNumberResource", "LoginPhoneNumberRequest", "LogoutPhoneNumberRequest",
@@ -158,6 +180,30 @@ func TestBuildDocumentStructure(t *testing.T) {
 	} {
 		if _, ok := schemas[name]; !ok {
 			t.Errorf("components.schemas missing %s", name)
+		}
+	}
+
+	// Chat-agent creation requires only agent.name. The phone assignment and
+	// every configuration field are optional, and fields removed from the
+	// current diagram must not remain advertised in the contract.
+	createChat, _ := schemas["CreateChatAgentRequest"].(map[string]any)
+	createChatProps, _ := createChat["properties"].(map[string]any)
+	chatAgentSection, _ := createChatProps["agent"].(map[string]any)
+	required, _ := chatAgentSection["required"].([]any)
+	if len(required) != 1 || required[0] != "name" {
+		t.Errorf("CreateChatAgentRequest agent.required = %v, want [name]", required)
+	}
+	chatAgentProps, _ := chatAgentSection["properties"].(map[string]any)
+	for _, removed := range []string{"timezone", "message_direction", "language"} {
+		if _, ok := chatAgentProps[removed]; ok {
+			t.Errorf("CreateChatAgentRequest still advertises removed agent field %q", removed)
+		}
+	}
+	chatPrompt, _ := createChatProps["prompt"].(map[string]any)
+	chatPromptProps, _ := chatPrompt["properties"].(map[string]any)
+	for _, removed := range []string{"begin_message_mode", "begin_message"} {
+		if _, ok := chatPromptProps[removed]; ok {
+			t.Errorf("CreateChatAgentRequest still advertises removed prompt field %q", removed)
 		}
 	}
 	secSchemes, _ := components["securitySchemes"].(map[string]any)

@@ -15,6 +15,7 @@ import (
 	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/auth"
 	"whatsapp-ai-caller-server/internal/calls"
+	"whatsapp-ai-caller-server/internal/chatagents"
 	"whatsapp-ai-caller-server/internal/config"
 	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/embeddings"
@@ -77,6 +78,7 @@ func main() {
 
 	usersRepo := users.NewRepository(pool)
 	agentsRepo := agents.NewRepository(pool)
+	chatAgentsRepo := chatagents.NewRepository(pool)
 	apiKeysRepo := apikeys.NewRepository(pool)
 	phoneNumbersRepo := phonenumbers.NewRepository(pool)
 	callsRepo := calls.NewRepository(pool)
@@ -111,7 +113,7 @@ func main() {
 		log.Printf("knowledge base indexing disabled: set OPENAI_API_KEY, PINECONE_API_KEY and PINECONE_INDEX_HOST to enable it")
 	}
 
-	whatsAppLoginManager, err := whatsapplogin.NewManager(ctx, cfg.DatabaseURL, phoneNumbersRepo, agentsRepo, callsRepo, knowledgeBaseRetriever)
+	whatsAppLoginManager, err := whatsapplogin.NewManager(ctx, cfg.DatabaseURL, phoneNumbersRepo, agentsRepo, chatAgentsRepo, callsRepo, knowledgeBaseRetriever)
 	if err != nil {
 		log.Fatalf("WhatsApp login manager failed: %v", err)
 	}
@@ -125,6 +127,7 @@ func main() {
 	router := routes.NewRouter(routes.Dependencies{
 		UsersRepo:                 usersRepo,
 		AgentsRepo:                agentsRepo,
+		ChatAgentsRepo:            chatAgentsRepo,
 		APIKeysRepo:               apiKeysRepo,
 		PhoneNumbersRepo:          phoneNumbersRepo,
 		CallsRepo:                 callsRepo,

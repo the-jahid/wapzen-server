@@ -118,7 +118,7 @@ func (t attachmentTable) resolve(
 			if !found {
 				return fmt.Errorf("%w: %s", t.errNotFound, id)
 			}
-			if owner != nil && *owner != agentID {
+			if owner.chat != nil || (owner.voice != nil && *owner.voice != agentID) {
 				return fmt.Errorf("%w: %s", t.errConflict, id)
 			}
 		}
@@ -161,9 +161,9 @@ func (t attachmentTable) lockRequested(
 	tx pgx.Tx,
 	userID string,
 	ids []string,
-) (map[string]*string, error) {
+) (map[string]attachmentOwner, error) {
 	query := fmt.Sprintf(`
-		SELECT id, agent_id
+		SELECT id, agent_id, chat_agent_id
 		FROM %s
 		WHERE id = ANY($1::text[]) AND user_id = $2
 		ORDER BY id
@@ -175,13 +175,13 @@ func (t attachmentTable) lockRequested(
 	}
 	defer rows.Close()
 
-	owners := make(map[string]*string, len(ids))
+	owners := make(map[string]attachmentOwner, len(ids))
 	for rows.Next() {
 		var (
 			id    string
-			owner *string
+			owner attachmentOwner
 		)
-		if err := rows.Scan(&id, &owner); err != nil {
+		if err := rows.Scan(&id, &owner.voice, &owner.chat); err != nil {
 			return nil, fmt.Errorf("scan %s owner: %w", t.subject, err)
 		}
 		owners[id] = owner
@@ -190,6 +190,11 @@ func (t attachmentTable) lockRequested(
 		return nil, fmt.Errorf("iterate %s owners: %w", t.subject, err)
 	}
 	return owners, nil
+}
+
+type attachmentOwner struct {
+	voice *string
+	chat  *string
 }
 
 // idsForAgent reads one agent's attached ids. The slice is always non-nil so the

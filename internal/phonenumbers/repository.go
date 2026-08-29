@@ -38,25 +38,31 @@ const returningColumns = `
 	last_connected_at, created_at, updated_at
 `
 
-// CreatePendingLogin inserts a user-owned phone number row in pending_qr state.
-func (r *Repository) CreatePendingLogin(ctx context.Context, userID string, phoneNumber, label *string) (models.PhoneNumber, error) {
-	const query = `
-		INSERT INTO phone_numbers (user_id, phone_number, label, status)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, user_id, phone_number, label, wa_jid, status, qr_code,
-			last_connected_at, created_at, updated_at
-	`
+// CreatePaired inserts the row for a QR login that just paired a WhatsApp
+// device. A login has no row before this point — an unscanned QR code is not a
+// phone number, and writing one for every code offered left the user's list
+// full of numbers nobody ever had — so the id is the one the login has been
+// serving all along rather than a fresh default, keeping the id the client has
+// been polling valid.
+func (r *Repository) CreatePaired(ctx context.Context, id, userID string, phoneNumber, label *string, waJID string) (models.PhoneNumber, error) {
+	query := fmt.Sprintf(`
+		INSERT INTO phone_numbers (id, user_id, phone_number, label, wa_jid, status, last_connected_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now())
+		RETURNING %s
+	`, returningColumns)
 
 	row, err := scanPhoneNumber(r.db.QueryRow(
 		ctx,
 		query,
+		id,
 		userID,
 		normalizeOptional(phoneNumber),
 		normalizeOptional(label),
-		models.PhoneNumberStatusPendingQR,
+		strings.TrimSpace(waJID),
+		models.PhoneNumberStatusConnected,
 	))
 	if err != nil {
-		return models.PhoneNumber{}, fmt.Errorf("create pending phone number login: %w", err)
+		return models.PhoneNumber{}, fmt.Errorf("create paired phone number: %w", err)
 	}
 	return row, nil
 }

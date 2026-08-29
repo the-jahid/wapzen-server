@@ -8,6 +8,7 @@ import (
 	"whatsapp-ai-caller-server/internal/agents"
 	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/calls"
+	"whatsapp-ai-caller-server/internal/chatagents"
 	"whatsapp-ai-caller-server/internal/handlers"
 	"whatsapp-ai-caller-server/internal/knowledgebases"
 	appmiddleware "whatsapp-ai-caller-server/internal/middleware"
@@ -23,6 +24,7 @@ import (
 type Dependencies struct {
 	UsersRepo                 *users.Repository
 	AgentsRepo                *agents.Repository
+	ChatAgentsRepo            *chatagents.Repository
 	APIKeysRepo               *apikeys.Repository
 	PhoneNumbersRepo          *phonenumbers.Repository
 	CallsRepo                 *calls.Repository
@@ -40,6 +42,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	r := chi.NewRouter()
 	webhookHandler := handlers.NewWebhookHandler(deps.UsersRepo, deps.ClerkWebhookSigningSecret)
 	agentHandler := handlers.NewAgentHandler(deps.AgentsRepo, deps.WhatsAppLoginManager, deps.KnowledgeBaseIndexer)
+	chatAgentHandler := handlers.NewChatAgentHandler(deps.ChatAgentsRepo, deps.KnowledgeBaseIndexer)
 	userHandler := handlers.NewUserHandler()
 	apiKeyHandler := handlers.NewAPIKeyHandler(deps.APIKeysRepo)
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(
@@ -114,6 +117,14 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Patch("/v1/dashboard/agents/{agent_id}", agentHandler.Update)
 		r.Delete("/v1/dashboard/agents/{agent_id}", agentHandler.Delete)
 
+		// Dashboard chat agents use the Clerk-authenticated account and control
+		// the behaviour of incoming WhatsApp text messages in real time.
+		r.Post("/v1/dashboard/chat-agents", chatAgentHandler.Create)
+		r.Get("/v1/dashboard/chat-agents", chatAgentHandler.List)
+		r.Get("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Get)
+		r.Patch("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Update)
+		r.Delete("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Delete)
+
 		// Dashboard call history uses the logged-in user. These share the same
 		// handlers as the API-key /v1/calls routes below; the auth middleware
 		// supplies the resolved user either way. Create places an outbound call;
@@ -174,6 +185,13 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Get("/v1/agents/{agent_id}", agentHandler.Get)
 		r.Patch("/v1/agents/{agent_id}", agentHandler.Update)
 		r.Delete("/v1/agents/{agent_id}", agentHandler.Delete)
+
+		// API-key chat-agent CRUD mirrors the dashboard routes above.
+		r.Post("/v1/chat-agents", chatAgentHandler.Create)
+		r.Get("/v1/chat-agents", chatAgentHandler.List)
+		r.Get("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Get)
+		r.Patch("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Update)
+		r.Delete("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Delete)
 
 		// Calls. Placing and managing the calls handled for the API key owner.
 		// POST places an outbound call; inbound calls are recorded by the

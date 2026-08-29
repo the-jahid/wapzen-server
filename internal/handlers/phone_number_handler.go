@@ -265,6 +265,19 @@ func (h *PhoneNumberHandler) Get(w http.ResponseWriter, r *http.Request) {
 	phoneNumber, err := h.repo.GetByUser(r.Context(), user.ID, phoneNumberID)
 	if err != nil {
 		if errors.Is(err, phonenumbers.ErrNotFound) {
+			// A QR login that has not been scanned yet has no row — it is not a
+			// phone number until a device pairs to it — so its state comes from
+			// the login manager. This is what the page polling a fresh QR code
+			// reads until the scan lands.
+			if draft, ok := h.loginManager.Draft(user.ID, phoneNumberID); ok {
+				writeJSON(w, http.StatusOK, phoneNumberEnvelope{
+					Success: true,
+					Message: "Phone number retrieved successfully",
+					Data:    draft,
+					Links:   phoneNumberLinks{Self: "/v1/phone-number/" + draft.ID},
+				})
+				return
+			}
 			writeJSON(w, http.StatusNotFound, models.APIResponse{
 				Success: false,
 				Message: "phone number not found",

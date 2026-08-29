@@ -73,6 +73,13 @@ go run ./cmd/api
 
 The server starts on `http://localhost:8080` (configurable via `PORT`).
 
+To apply database migrations without starting the API or reconnecting WhatsApp
+sessions, run:
+
+```powershell
+go run ./cmd/migrate
+```
+
 For live reload during backend development, install and run Air:
 
 ```powershell

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"whatsapp-ai-caller-server/internal/agenttools"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -44,13 +45,10 @@ type KnowledgeRetriever interface {
 }
 
 // toolDefinition is one function the model may call, in provider-neutral form.
-// Each provider renders it into its own schema shape.
-type toolDefinition struct {
-	Name        string
-	Description string
-	// Parameters is a JSON Schema object describing the arguments.
-	Parameters map[string]any
-}
+// Each provider renders it into its own schema shape. It is the shared
+// definition rather than a copy of it, so a tool declared for a call and one
+// declared for a chat describe themselves to the model identically.
+type toolDefinition = agenttools.Definition
 
 // toolRunner is the set of tools available on one call. Run never returns an
 // error: a lookup that fails is reported to the model as text, so the agent can
