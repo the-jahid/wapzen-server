@@ -95,6 +95,9 @@ type Manager struct {
 	ai             *aiResponder
 	voice          *voicecall.Client
 	knowledge      voicecall.KnowledgeRetriever
+	// chats saves answered text threads. Optional: a nil store leaves the
+	// reply path untouched and keeps no history (see UseChatStore).
+	chats ChatStore
 
 	aiMu      sync.Mutex
 	aiHistory map[string][]aiMessage
@@ -1601,6 +1604,91 @@ const chatTypingRefreshInterval = 8 * time.Second
 // to stop a reply that has stopped making progress.
 const chatReplyTimeout = 90 * time.Second
 
+// chatRecordTimeout bounds saving one exchange to the conversation history. The
+// reply has already been sent by then, so this write must never hold the
+// message goroutine open for as long as the reply itself was allowed to take.
+const chatRecordTimeout = 5 * time.Second
+
+// ChatStore persists the WhatsApp text threads this manager answers, so a
+// conversation can be read back after the process that held it in memory is
+// gone. It is injected via UseChatStore; without one the runtime replies exactly
+// as before and simply keeps no record.
+type ChatStore interface {
+	RecordTurn(ctx context.Context, turn models.NewChatTurn) error
+}
+
+// UseChatStore wires the persistence backend for answered chat threads. Safe on
+// a nil receiver and a nil store (leaves history unsaved). Set once at startup,
+// before any message is answered.
+func (m *Manager) UseChatStore(store ChatStore) {
+	if m == nil {
+		return
+	}
+	m.chats = store
+}
+
+// SendChatMessage sends one message from the dashboard on an existing thread —
+// a person taking over from the agent — using the same live session the agent
+// answers on. peerJID is the thread's stored contact JID, which is the JID the
+// message arrived from and therefore the one that is known to route back.
+//
+// chatAgentID is optional: when it names the agent that answers this thread, the
+// message is also appended to that thread's in-process history, so the agent's
+// next reply is written knowing what the person already said rather than
+// contradicting it.
+//
+// It returns ErrNumberNotConnected when the number has no live session here.
+func (m *Manager) SendChatMessage(ctx context.Context, userID, phoneNumberID, chatAgentID, peerJID, body string) error {
+	if m == nil {
+		return ErrNumberNotConnected
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return fmt.Errorf("message body is required")
+	}
+	peer, err := types.ParseJID(strings.TrimSpace(peerJID))
+	if err != nil {
+		return fmt.Errorf("parse contact JID %q: %w", peerJID, err)
+	}
+
+	session := m.getSession(phoneNumberID)
+	if session == nil || session.userID != userID || !session.isConnected() {
+		return ErrNumberNotConnected
+	}
+	if err := m.messageSenderFor(phoneNumberID, userID)(ctx, peer, body); err != nil {
+		return err
+	}
+
+	if chatAgentID != "" {
+		historyKey := chatAgentID + "|" + phoneNumberID + "|" + peer.String()
+		m.appendChatHistory(historyKey, aiMessage{Role: "assistant", Content: body})
+	}
+	log.Printf("whatsapp chat agent: dashboard message sent phone_number_id=%s to=%s", phoneNumberID, peer.String())
+	return nil
+}
+
+// recordChatTurn saves one exchange — the message that arrived and the reply
+// that went back — on its own context, because the request context of the reply
+// may already be spent by the time this runs.
+//
+// A failure here is logged and dropped: the person on WhatsApp has their answer,
+// and losing the dashboard's copy of it is not a reason to disturb the reply
+// path. reply is empty when the agent said nothing, which still records that the
+// message arrived.
+func (m *Manager) recordChatTurn(turn models.NewChatTurn, reply string) {
+	if m.chats == nil {
+		return
+	}
+	turn.AssistantMessage = reply
+
+	ctx, cancel := context.WithTimeout(context.Background(), chatRecordTimeout)
+	defer cancel()
+	if err := m.chats.RecordTurn(ctx, turn); err != nil {
+		log.Printf("whatsapp chat agent: save conversation failed agent_id=%s phone_number_id=%s: %v",
+			turn.ChatAgentID, turn.PhoneNumberID, err)
+	}
+}
+
 type chatPresenceSender interface {
 	SendChatPresence(context.Context, types.JID, types.ChatPresence, types.ChatPresenceMedia) error
 }
@@ -1670,6 +1758,20 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 	phoneNumberID := session.phoneNumberID
 	userID := session.userID
 
+	// The thread this message belongs to, captured from the event: the reply
+	// goroutine below saves the exchange under it whether or not an agent
+	// answers. A "…@lid" sender carries no phone number, so peer_phone is left
+	// empty rather than filled with the opaque id.
+	turn := models.NewChatTurn{
+		UserID:        userID,
+		PhoneNumberID: phoneNumberID,
+		PeerJID:       chat.String(),
+		PeerPhone:     peerPhoneFromJID(chat),
+		PeerName:      strings.TrimSpace(evt.Info.PushName),
+		WAMessageID:   evt.Info.ID,
+		UserMessage:   text,
+	}
+
 	// Reply off the event goroutine so the OpenAI round trip never blocks
 	// whatsmeow's event delivery.
 	go func() {
@@ -1684,8 +1786,12 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 		if agent == nil {
 			return
 		}
+		// Every exit below this point is part of that agent's conversation, so
+		// the thread is attributed to it whether or not the reply gets written.
+		turn.ChatAgentID = agent.ID
 		if !m.ai.Available(agent.ModelProvider) {
 			log.Printf("whatsapp chat agent: %s provider is not configured agent_id=%s phone_number_id=%s", agent.ModelProvider, agent.ID, phoneNumberID)
+			m.recordChatTurn(turn, "")
 			return
 		}
 		stopTyping := startChatTyping(ctx, client, chat, phoneNumberID)
@@ -1699,18 +1805,24 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 		reply, err := m.ai.Reply(ctx, *agent, messages, toolbox)
 		if err != nil {
 			log.Printf("whatsapp chat agent: reply failed agent_id=%s phone_number_id=%s: %v", agent.ID, phoneNumberID, err)
+			m.recordChatTurn(turn, "")
 			return
 		}
 		if reply = strings.TrimSpace(reply); reply == "" {
+			m.recordChatTurn(turn, "")
 			return
 		}
 
 		stopTyping()
 		if _, err := client.SendMessage(ctx, chat, &waE2E.Message{Conversation: proto.String(reply)}); err != nil {
 			log.Printf("whatsapp chat agent: send reply failed agent_id=%s phone_number_id=%s: %v", agent.ID, phoneNumberID, err)
+			// The answer was written but never delivered, so only the message
+			// that arrived is history.
+			m.recordChatTurn(turn, "")
 			return
 		}
 		m.appendChatHistory(historyKey, aiMessage{Role: "user", Content: text}, aiMessage{Role: "assistant", Content: reply})
+		m.recordChatTurn(turn, reply)
 		log.Printf("whatsapp chat agent: replied agent_id=%s to=%s phone_number_id=%s", agent.ID, chat.String(), phoneNumberID)
 	}()
 }
@@ -1864,6 +1976,21 @@ func (m *Manager) appendChatHistory(key string, messages ...aiMessage) {
 		history = append([]aiMessage(nil), history[len(history)-maxMessages:]...)
 	}
 	m.aiHistory[key] = history
+}
+
+// peerPhoneFromJID returns the contact's number in E.164 when the JID carries
+// one. An "…@lid" sender is an opaque WhatsApp identifier with no number in it,
+// so those return empty and the thread keeps only the JID until a mapping for it
+// is known.
+func peerPhoneFromJID(jid types.JID) string {
+	if jid.Server != types.DefaultUserServer {
+		return ""
+	}
+	user := strings.TrimSpace(jid.User)
+	if user == "" {
+		return ""
+	}
+	return "+" + user
 }
 
 // extractTextMessage pulls plain text out of the two common text message shapes:

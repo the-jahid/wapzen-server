@@ -108,11 +108,15 @@ func toolSchema() oas.Object {
 		P("description", oas.Str().Desc("What the model reads when deciding whether to call this. Say what "+
 			"the tool does and when to use it.").
 			Example("Look up open appointment slots for a given day so the agent can offer times.")).
-		P("agent_id", oas.Str().Nullable().Desc("Agent this tool belongs to, or null while it belongs to none. "+
-			"Read-only here: attach a tool by writing the owning agent's `tools.tool_ids`. A tool belongs to one "+
-			"agent, so a non-null value means attaching it elsewhere is rejected with 409 until it is detached "+
-			"here. Deleting that agent deletes this tool with it.").
-			Example(nil)).
+		P("agent_ids", oas.Arr(oas.Str().Example("agent_12345")).
+			Desc("Voice agents this tool is attached to, empty while it is attached to none. Read-only here: "+
+				"attach a tool by writing that agent's `tools.tool_ids`. A tool is shared, so the same one can be "+
+				"attached to any number of agents; deleting an agent detaches it rather than deleting it.").
+			Default([]string{})).
+		P("chat_agent_ids", oas.Arr(oas.Str().Example("chat_agent_12345")).
+			Desc("Chat agents this tool is attached to, on the same terms as agent_ids. Only api_request and "+
+				"send_text tools do anything in a chat.").
+			Default([]string{})).
 		P("api_request", oas.Ref("ToolAPIRequestConfig")).
 		P("transfer_call", oas.Ref("ToolTransferCallConfig")).
 		P("send_text", oas.Ref("ToolSendTextConfig")).

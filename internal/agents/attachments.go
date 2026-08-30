@@ -8,16 +8,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// An agent's knowledge bases and its tools are attached the same way: the
-// attached row carries an agent_id pointing back at its agent, and the agent's
-// write path replaces that set wholesale. The two differ only in which table
-// they read and which errors they report, so the mechanics live here once —
-// this is lock-ordering-sensitive code that should not be maintained twice.
-//
-// The alternative, a join table per kind, is what this replaced. A direct column
+// A knowledge base is attached by carrying an agent_id that points back at its
+// agent, and the agent's write path replaces that set wholesale. A direct column
 // makes the agent the owner of what it attaches, which is what the cascade in
-// migrations 00044 and 00045 then means: deleting an agent deletes its knowledge
-// bases and tools rather than orphaning them.
+// migration 00044 then means: deleting an agent deletes its knowledge bases
+// rather than orphaning them, and a base answers for one agent at a time.
+//
+// Tools took the same shape until migration 00053 and no longer do: a tool is a
+// definition rather than a possession — the same "look up a booking" request is
+// exactly what several agents want — so it is attached through the agent_tools
+// join table and may be shared. That code lives in tools.go; what remains here
+// is the knowledge-base half alone.
 
 // attachmentTable is one kind of row an agent attaches. name is a table
 // identifier interpolated into SQL, so it is only ever a constant from the two
@@ -29,21 +30,12 @@ type attachmentTable struct {
 	errConflict error
 }
 
-var (
-	knowledgeBaseAttachments = attachmentTable{
-		name:        "knowledge_bases",
-		subject:     "knowledge base",
-		errNotFound: ErrKnowledgeBaseNotFound,
-		errConflict: ErrKnowledgeBaseAttachmentConflict,
-	}
-
-	toolAttachments = attachmentTable{
-		name:        "tools",
-		subject:     "tool",
-		errNotFound: ErrToolNotFound,
-		errConflict: ErrToolAttachmentConflict,
-	}
-)
+var knowledgeBaseAttachments = attachmentTable{
+	name:        "knowledge_bases",
+	subject:     "knowledge base",
+	errNotFound: ErrKnowledgeBaseNotFound,
+	errConflict: ErrKnowledgeBaseAttachmentConflict,
+}
 
 // attachmentOrder is how an agent's attachments are read back everywhere: oldest
 // first, ties broken by id so the order is stable rather than whatever the table

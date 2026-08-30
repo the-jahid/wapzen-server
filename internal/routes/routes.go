@@ -9,6 +9,7 @@ import (
 	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/calls"
 	"whatsapp-ai-caller-server/internal/chatagents"
+	"whatsapp-ai-caller-server/internal/chatconversations"
 	"whatsapp-ai-caller-server/internal/handlers"
 	"whatsapp-ai-caller-server/internal/knowledgebases"
 	appmiddleware "whatsapp-ai-caller-server/internal/middleware"
@@ -25,6 +26,7 @@ type Dependencies struct {
 	UsersRepo                 *users.Repository
 	AgentsRepo                *agents.Repository
 	ChatAgentsRepo            *chatagents.Repository
+	ChatConversationsRepo     *chatconversations.Repository
 	APIKeysRepo               *apikeys.Repository
 	PhoneNumbersRepo          *phonenumbers.Repository
 	CallsRepo                 *calls.Repository
@@ -43,6 +45,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	webhookHandler := handlers.NewWebhookHandler(deps.UsersRepo, deps.ClerkWebhookSigningSecret)
 	agentHandler := handlers.NewAgentHandler(deps.AgentsRepo, deps.WhatsAppLoginManager, deps.KnowledgeBaseIndexer)
 	chatAgentHandler := handlers.NewChatAgentHandler(deps.ChatAgentsRepo, deps.KnowledgeBaseIndexer)
+	chatConversationHandler := handlers.NewChatConversationHandler(deps.ChatConversationsRepo, deps.WhatsAppLoginManager)
 	userHandler := handlers.NewUserHandler()
 	apiKeyHandler := handlers.NewAPIKeyHandler(deps.APIKeysRepo)
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(
@@ -125,6 +128,17 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Patch("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Update)
 		r.Delete("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Delete)
 
+		// The saved WhatsApp threads those agents answered. They are written by
+		// the message runtime as it replies, so the API only reads a thread,
+		// closes it, or deletes it. The per-agent route is what the dashboard's
+		// Conversation tab lists.
+		r.Get("/v1/dashboard/chat-agents/{chat_agent_id}/conversations", chatConversationHandler.ListByChatAgent)
+		r.Get("/v1/dashboard/chat-conversations", chatConversationHandler.List)
+		r.Get("/v1/dashboard/chat-conversations/{conversation_id}", chatConversationHandler.Get)
+		r.Patch("/v1/dashboard/chat-conversations/{conversation_id}", chatConversationHandler.Update)
+		r.Post("/v1/dashboard/chat-conversations/{conversation_id}/messages", chatConversationHandler.SendMessage)
+		r.Delete("/v1/dashboard/chat-conversations/{conversation_id}", chatConversationHandler.Delete)
+
 		// Dashboard call history uses the logged-in user. These share the same
 		// handlers as the API-key /v1/calls routes below; the auth middleware
 		// supplies the resolved user either way. Create places an outbound call;
@@ -192,6 +206,14 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Get("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Get)
 		r.Patch("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Update)
 		r.Delete("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Delete)
+
+		// API-key chat-conversation reads mirror the dashboard routes above.
+		r.Get("/v1/chat-agents/{chat_agent_id}/conversations", chatConversationHandler.ListByChatAgent)
+		r.Get("/v1/chat-conversations", chatConversationHandler.List)
+		r.Get("/v1/chat-conversations/{conversation_id}", chatConversationHandler.Get)
+		r.Patch("/v1/chat-conversations/{conversation_id}", chatConversationHandler.Update)
+		r.Post("/v1/chat-conversations/{conversation_id}/messages", chatConversationHandler.SendMessage)
+		r.Delete("/v1/chat-conversations/{conversation_id}", chatConversationHandler.Delete)
 
 		// Calls. Placing and managing the calls handled for the API key owner.
 		// POST places an outbound call; inbound calls are recorded by the

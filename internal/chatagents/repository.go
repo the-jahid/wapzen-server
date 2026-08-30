@@ -19,7 +19,6 @@ var (
 	ErrKnowledgeBaseNotFound = errors.New("knowledge base not found")
 	ErrToolNotFound          = errors.New("tool not found")
 	ErrKnowledgeBaseConflict = errors.New("knowledge base is already attached to another agent")
-	ErrToolConflict          = errors.New("tool is already attached to another agent")
 )
 
 type Repository struct{ pool *pgxpool.Pool }
@@ -89,7 +88,7 @@ func (r *Repository) Create(ctx context.Context, userID string, req CreateReques
 		}
 	}
 	if req.Tools != nil {
-		if err := resolveAttachments(ctx, tx, chatTools, userID, resource.ID, req.Tools.ToolIDs); err != nil {
+		if err := resolveToolAttachments(ctx, tx, userID, resource.ID, req.Tools.ToolIDs); err != nil {
 			return Resource{}, err
 		}
 	}
@@ -228,7 +227,7 @@ func (r *Repository) Update(ctx context.Context, userID, id string, req UpdateRe
 		}
 	}
 	if req.Tools != nil && req.Tools.ToolIDs != nil {
-		if err := resolveAttachments(ctx, tx, chatTools, userID, id, *req.Tools.ToolIDs); err != nil {
+		if err := resolveToolAttachments(ctx, tx, userID, id, *req.Tools.ToolIDs); err != nil {
 			return Resource{}, err
 		}
 	}
@@ -316,10 +315,11 @@ func (r *Repository) KnowledgeBasesForChatAgent(ctx context.Context, id string) 
 // failing the reply: one broken tool must not cost the sender an answer.
 func (r *Repository) ToolsForChatAgent(ctx context.Context, id string) ([]models.AgentTool, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, type, tool_name, description, config
-		FROM tools
-		WHERE chat_agent_id=$1
-		ORDER BY created_at,id`, id)
+		SELECT t.id, t.type, t.tool_name, t.description, t.config
+		FROM chat_agent_tools cat
+		JOIN tools t ON t.id = cat.tool_id
+		WHERE cat.chat_agent_id=$1
+		ORDER BY cat.created_at, cat.tool_id`, id)
 	if err != nil {
 		return nil, fmt.Errorf("select chat agent tools: %w", err)
 	}
@@ -370,7 +370,56 @@ type attachmentKind struct {
 }
 
 var knowledgeBases = attachmentKind{"knowledge_bases", "knowledge_base_ids", "knowledge base", ErrKnowledgeBaseNotFound, ErrKnowledgeBaseConflict}
-var chatTools = attachmentKind{"tools", "tool_ids", "tool", ErrToolNotFound, ErrToolConflict}
+
+// resolveToolAttachments makes the chat agent's tool set exactly ids. Unlike a
+// knowledge base, a tool is shared: the same definition can be attached to any
+// number of agents, chat and voice alike, so there is no ownership to take away
+// and nothing to refuse. Only ownership by this user is checked, because the
+// foreign key alone would let an id guessed from another account attach.
+func resolveToolAttachments(ctx context.Context, tx pgx.Tx, userID, chatAgentID string, rawIDs []string) error {
+	ids := normalizeIDs(rawIDs)
+
+	if len(ids) > 0 {
+		rows, err := tx.Query(ctx,
+			`SELECT id FROM tools WHERE id=ANY($1::text[]) AND user_id=$2 ORDER BY id FOR SHARE`, ids, userID)
+		if err != nil {
+			return fmt.Errorf("lock tools: %w", err)
+		}
+		owned := make(map[string]struct{}, len(ids))
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			owned[id] = struct{}{}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, ok := owned[id]; !ok {
+				return fmt.Errorf("%w: %s", ErrToolNotFound, id)
+			}
+		}
+	}
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM chat_agent_tools WHERE chat_agent_id=$1 AND tool_id <> ALL($2::text[])`, chatAgentID, ids); err != nil {
+		return fmt.Errorf("detach tools: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO chat_agent_tools (chat_agent_id, tool_id)
+		SELECT $1, id FROM unnest($2::text[]) AS id
+		ON CONFLICT (chat_agent_id, tool_id) DO NOTHING`, chatAgentID, ids); err != nil {
+		return fmt.Errorf("attach tools: %w", err)
+	}
+	return nil
+}
 
 func resolveAttachments(ctx context.Context, tx pgx.Tx, kind attachmentKind, userID, chatAgentID string, rawIDs []string) error {
 	ids := normalizeIDs(rawIDs)
@@ -441,17 +490,25 @@ func (r *Repository) attachToMany(ctx context.Context, q attachmentQueryer, reso
 		resources[i].KnowledgeBase.KnowledgeBaseIDs = []string{}
 		resources[i].Tools.ToolIDs = []string{}
 	}
+	// A knowledge base carries its chat agent on the row itself; a tool is shared
+	// and carries its attachments in a join table. Both are read for the whole
+	// page at once so listing agents does not fan out into a query per agent.
 	for _, spec := range []struct {
-		kind attachmentKind
-		set  func(*Resource, string)
+		query string
+		set   func(*Resource, string)
 	}{
-		{knowledgeBases, func(r *Resource, id string) {
-			r.KnowledgeBase.KnowledgeBaseIDs = append(r.KnowledgeBase.KnowledgeBaseIDs, id)
-		}},
-		{chatTools, func(r *Resource, id string) { r.Tools.ToolIDs = append(r.Tools.ToolIDs, id) }},
+		{
+			fmt.Sprintf(`SELECT chat_agent_id,id FROM %s WHERE chat_agent_id=ANY($1::text[]) ORDER BY chat_agent_id,created_at,id`, knowledgeBases.table),
+			func(r *Resource, id string) {
+				r.KnowledgeBase.KnowledgeBaseIDs = append(r.KnowledgeBase.KnowledgeBaseIDs, id)
+			},
+		},
+		{
+			`SELECT chat_agent_id,tool_id FROM chat_agent_tools WHERE chat_agent_id=ANY($1::text[]) ORDER BY chat_agent_id,created_at,tool_id`,
+			func(r *Resource, id string) { r.Tools.ToolIDs = append(r.Tools.ToolIDs, id) },
+		},
 	} {
-		query := fmt.Sprintf(`SELECT chat_agent_id,id FROM %s WHERE chat_agent_id=ANY($1::text[]) ORDER BY chat_agent_id,created_at,id`, spec.kind.table)
-		rows, err := q.Query(ctx, query, ids)
+		rows, err := q.Query(ctx, spec.query, ids)
 		if err != nil {
 			return err
 		}

@@ -1,9 +1,13 @@
-// Package tools persists the actions an agent can take during a call into the
-// tools table. A tool row only defines the action — which endpoint to hit, which
-// number to hand the caller to, what message to send. It does nothing until an
-// agent is attached to it, which is the agents package's half of the feature
-// (the tools.agent_id column, written by the agent's tools.tool_ids); this
-// package owns the definitions themselves.
+// Package tools persists the actions an agent can take mid-conversation into
+// the tools table. A tool row only defines the action — which endpoint to hit,
+// which number to hand the caller to, what message to send. It does nothing
+// until an agent is attached to it, which is the agents and chatagents packages'
+// half of the feature (the agent_tools and chat_agent_tools join tables, written
+// by each agent's tools.tool_ids); this package owns the definitions themselves.
+//
+// A tool is shared rather than owned: the same definition can be attached to any
+// number of agents of either kind, which is why the attachment lives in a join
+// table and a tool's own row records no agent.
 //
 // The type-specific settings are stored as JSON in one column. The variants
 // share almost no fields and are replaced wholesale rather than merged, so the
@@ -41,7 +45,7 @@ const uniqueViolation = "23505"
 // reads them. Shared by every query that returns a row so a schema change is
 // made in one place.
 const toolColumns = `
-	id, user_id, agent_id, type, tool_name, description, config, created_at, updated_at
+	id, user_id, type, tool_name, description, config, created_at, updated_at
 `
 
 type dbQuerier interface {
@@ -90,7 +94,9 @@ func (r *Repository) Create(ctx context.Context, params models.NewTool) (models.
 		}
 		return models.Tool{}, fmt.Errorf("create tool: %w", err)
 	}
-	return tool, nil
+	// A tool is attached to nothing the moment it is created; the empty lists
+	// come from here rather than being left null.
+	return r.withAttachments(ctx, tool)
 }
 
 // ListByUser returns one page of the user's tools, newest first, together with
@@ -142,7 +148,69 @@ func (r *Repository) ListByUser(ctx context.Context, userID, toolType string, li
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("iterate tools: %w", err)
 	}
+	if err := r.loadAttachments(ctx, out); err != nil {
+		return nil, 0, err
+	}
 	return out, total, nil
+}
+
+// loadAttachments fills in which agents each tool is attached to, for the whole
+// page in two queries rather than two per tool. The slices are always non-nil so
+// a tool nobody uses serializes as [] rather than null.
+func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) error {
+	if len(page) == 0 {
+		return nil
+	}
+	ids := make([]string, len(page))
+	positions := make(map[string]int, len(page))
+	for i := range page {
+		ids[i] = page[i].ID
+		positions[page[i].ID] = i
+		page[i].AgentIDs = []string{}
+		page[i].ChatAgentIDs = []string{}
+	}
+
+	for _, spec := range []struct {
+		query string
+		set   func(*models.Tool, string)
+	}{
+		{
+			`SELECT tool_id, agent_id FROM agent_tools WHERE tool_id = ANY($1::text[]) ORDER BY tool_id, created_at, agent_id`,
+			func(t *models.Tool, id string) { t.AgentIDs = append(t.AgentIDs, id) },
+		},
+		{
+			`SELECT tool_id, chat_agent_id FROM chat_agent_tools WHERE tool_id = ANY($1::text[]) ORDER BY tool_id, created_at, chat_agent_id`,
+			func(t *models.Tool, id string) { t.ChatAgentIDs = append(t.ChatAgentIDs, id) },
+		},
+	} {
+		rows, err := r.db.Query(ctx, spec.query, ids)
+		if err != nil {
+			return fmt.Errorf("select tool attachments: %w", err)
+		}
+		for rows.Next() {
+			var toolID, agentID string
+			if err := rows.Scan(&toolID, &agentID); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan tool attachment: %w", err)
+			}
+			spec.set(&page[positions[toolID]], agentID)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterate tool attachments: %w", err)
+		}
+	}
+	return nil
+}
+
+// withAttachments fills in one tool's attachments, the single-row form of
+// loadAttachments.
+func (r *Repository) withAttachments(ctx context.Context, tool models.Tool) (models.Tool, error) {
+	page := []models.Tool{tool}
+	if err := r.loadAttachments(ctx, page); err != nil {
+		return models.Tool{}, err
+	}
+	return page[0], nil
 }
 
 // GetByUser loads one tool by id, scoped to the authenticated user. It returns
@@ -158,7 +226,7 @@ func (r *Repository) GetByUser(ctx context.Context, userID, id string) (models.T
 		}
 		return models.Tool{}, fmt.Errorf("get tool: %w", err)
 	}
-	return tool, nil
+	return r.withAttachments(ctx, tool)
 }
 
 // UpdateByUser applies a partial update to one tool owned by the authenticated
@@ -224,7 +292,7 @@ func (r *Repository) UpdateByUser(ctx context.Context, userID, id string, params
 		}
 		return models.Tool{}, fmt.Errorf("update tool: %w", err)
 	}
-	return tool, nil
+	return r.withAttachments(ctx, tool)
 }
 
 // updatedConfig picks the configuration block an update writes, given the tool's
@@ -256,10 +324,10 @@ func updatedConfig(toolType string, params models.ToolUpdate) any {
 // ErrNotFound when no such tool exists for that user, so deleting somebody
 // else's reads the same as deleting one that never existed.
 //
-// The agent that owns it, if any, loses it by the same statement: the owner is
-// the row's own agent_id, so there is nothing left behind to detach. A call
-// already in progress keeps the definitions it started with — it resolved them
-// when it was answered.
+// Every agent attached to it loses it by the same statement: the join rows
+// cascade with the tool, so there is nothing left behind to detach. A call or
+// chat already in progress keeps the definitions it started with — it resolved
+// them when it was answered.
 func (r *Repository) DeleteByUser(ctx context.Context, userID, id string) error {
 	const query = `DELETE FROM tools WHERE id = $1 AND user_id = $2`
 	tag, err := r.db.Exec(ctx, query, id, userID)
@@ -298,7 +366,6 @@ func scanTool(row rowScanner) (models.Tool, error) {
 	if err := row.Scan(
 		&tool.ID,
 		&tool.UserID,
-		&tool.AgentID,
 		&tool.Type,
 		&tool.Name,
 		&tool.Description,

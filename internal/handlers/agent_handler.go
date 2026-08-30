@@ -274,13 +274,13 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete removes the agent named by the agent_id path parameter, together with
-// the knowledge bases and tools it owns (cascaded by the schema) and the vectors
-// those knowledge bases had indexed (purged here, since no cascade reaches the
-// vector store).
+// the knowledge bases it owns (cascaded by the schema) and the vectors those
+// knowledge bases had indexed (purged here, since no cascade reaches the vector
+// store). Its tools are shared, so they are only detached.
 //
 // Delete godoc
 // @Summary      Delete Agent
-// @Description  Deletes an agent owned by the authenticated user. A knowledge base or tool belongs to the agent that attached it, so this deletes them too — the knowledge bases with their sources and every vector indexed under their namespaces, and the tools with their configuration. Detach anything worth keeping first by removing its id from the agent's knowledge_base.knowledge_base_ids or tools.tool_ids. Any phone number assigned to the agent is released rather than deleted.
+// @Description  Deletes an agent owned by the authenticated user. A knowledge base belongs to the agent that attached it, so this deletes those too — with their sources and every vector indexed under their namespaces. Detach any worth keeping first by removing its id from the agent's knowledge_base.knowledge_base_ids. Tools are shared rather than owned: they are detached and stay in the account for the agents that still use them. Any phone number assigned to the agent is released rather than deleted.
 // @Tags         agents
 // @Produce      json
 // @Security     BearerAuth
@@ -485,11 +485,12 @@ func writeAgentAssignmentError(w http.ResponseWriter, err error) bool {
 			Message: err.Error(),
 		})
 		return true
-	case errors.Is(err, agents.ErrKnowledgeBaseAttachmentConflict), errors.Is(err, agents.ErrToolAttachmentConflict):
-		// A knowledge base or tool belongs to one agent, so taking one that is
-		// already another agent's is refused rather than silently detaching it
-		// there — the same 409 a phone number already assigned elsewhere gets.
-		// The message carries the offending id.
+	case errors.Is(err, agents.ErrKnowledgeBaseAttachmentConflict):
+		// A knowledge base belongs to one agent, so taking one that is already
+		// another agent's is refused rather than silently detaching it there —
+		// the same 409 a phone number already assigned elsewhere gets. The
+		// message carries the offending id. Tools have no such conflict: one is
+		// shared by as many agents as attach it.
 		writeJSON(w, http.StatusConflict, models.APIResponse{
 			Success: false,
 			Message: err.Error(),

@@ -239,12 +239,12 @@ func deleteAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteAgent",
 		"summary":     "Delete Agent",
-		"description": "Deletes an agent by id, scoped to the authenticated API key owner. A knowledge base or " +
-			"tool belongs to the agent that attached it, so this deletes them too — the knowledge bases with " +
-			"their sources and every vector indexed under their namespaces, and the tools with their " +
-			"configuration. Detach anything worth keeping first, by removing its id from the agent's " +
-			"`knowledge_base.knowledge_base_ids` or `tools.tool_ids`. Any phone number assigned to the agent is " +
-			"released rather than deleted.",
+		"description": "Deletes an agent by id, scoped to the authenticated API key owner. A knowledge base " +
+			"belongs to the agent that attached it, so this deletes those too — with their sources and every " +
+			"vector indexed under their namespaces. Detach any worth keeping first, by removing its id from the " +
+			"agent's `knowledge_base.knowledge_base_ids`. Tools are shared rather than owned: they are detached " +
+			"and stay in the account, available to the agents that still use them. Any phone number assigned to " +
+			"the agent is released rather than deleted.",
 		"security":    apiKeySecurity(),
 		"parameters":  []any{agentIDParam()},
 		"responses": oas.Object{

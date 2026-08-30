@@ -16,6 +16,7 @@ import (
 	"whatsapp-ai-caller-server/internal/auth"
 	"whatsapp-ai-caller-server/internal/calls"
 	"whatsapp-ai-caller-server/internal/chatagents"
+	"whatsapp-ai-caller-server/internal/chatconversations"
 	"whatsapp-ai-caller-server/internal/config"
 	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/embeddings"
@@ -79,6 +80,7 @@ func main() {
 	usersRepo := users.NewRepository(pool)
 	agentsRepo := agents.NewRepository(pool)
 	chatAgentsRepo := chatagents.NewRepository(pool)
+	chatConversationsRepo := chatconversations.NewRepository(pool)
 	apiKeysRepo := apikeys.NewRepository(pool)
 	phoneNumbersRepo := phonenumbers.NewRepository(pool)
 	callsRepo := calls.NewRepository(pool)
@@ -119,6 +121,10 @@ func main() {
 	}
 	defer whatsAppLoginManager.Close()
 
+	// Save the text threads the chat agents answer, so a conversation outlives
+	// the process that held it in memory and can be read back in the dashboard.
+	whatsAppLoginManager.UseChatStore(chatConversationsRepo)
+
 	// Reconnect already-paired numbers so they keep receiving messages after a
 	// restart, instead of sitting "connected" in the DB with no live client.
 	whatsAppLoginManager.ResumeSessions(ctx)
@@ -128,6 +134,7 @@ func main() {
 		UsersRepo:                 usersRepo,
 		AgentsRepo:                agentsRepo,
 		ChatAgentsRepo:            chatAgentsRepo,
+		ChatConversationsRepo:     chatConversationsRepo,
 		APIKeysRepo:               apiKeysRepo,
 		PhoneNumbersRepo:          phoneNumbersRepo,
 		CallsRepo:                 callsRepo,

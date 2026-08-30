@@ -224,7 +224,7 @@ func knowledgeBaseSectionSchema() oas.Object {
 }
 
 func toolsSectionSchema() oas.Object {
-	return oas.Obj().Desc("Tools available to this chat agent. Only api_request and send_text tools apply to a chat; " +
+	return oas.Obj().Desc("Tools available to this chat agent. Only api_request and send_text tools apply to a chat; "+
 		"end_call and transfer_call exist to release a phone call and are ignored here.").
 		P("tool_ids", oas.Arr(oas.Str().Example("tool_12345")).Default([]string{})).
 		Build()

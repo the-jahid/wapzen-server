@@ -160,7 +160,7 @@ func (h *ChatAgentHandler) writeError(w http.ResponseWriter, err error, fallback
 	case errors.Is(err, chatagents.ErrKnowledgeBaseNotFound), errors.Is(err, chatagents.ErrToolNotFound):
 		writeJSON(w, http.StatusNotFound, models.APIResponse{Success: false, Message: err.Error()})
 		return
-	case errors.Is(err, chatagents.ErrKnowledgeBaseConflict), errors.Is(err, chatagents.ErrToolConflict):
+	case errors.Is(err, chatagents.ErrKnowledgeBaseConflict):
 		writeJSON(w, http.StatusConflict, models.APIResponse{Success: false, Message: err.Error()})
 		return
 	}

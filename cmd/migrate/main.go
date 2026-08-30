@@ -23,16 +23,20 @@ func main() {
 		log.Fatalf("database verification connection failed: %v", err)
 	}
 	defer pool.Close()
-	var chatAgents, knowledgeOwner, toolOwner bool
+	// A knowledge base still carries its chat agent on its own row; a tool is
+	// shared, so its attachments live in the two join tables instead.
+	var chatAgents, knowledgeOwner, agentTools, chatAgentTools bool
 	if err := pool.QueryRow(ctx, `SELECT
 		to_regclass('chat_agents') IS NOT NULL,
 		EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_bases' AND column_name='chat_agent_id'),
-		EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tools' AND column_name='chat_agent_id')`).
-		Scan(&chatAgents, &knowledgeOwner, &toolOwner); err != nil {
+		to_regclass('agent_tools') IS NOT NULL,
+		to_regclass('chat_agent_tools') IS NOT NULL`).
+		Scan(&chatAgents, &knowledgeOwner, &agentTools, &chatAgentTools); err != nil {
 		log.Fatalf("database schema verification failed: %v", err)
 	}
-	if !chatAgents || !knowledgeOwner || !toolOwner {
-		log.Fatalf("database schema verification failed: chat_agents=%t knowledge_owner=%t tool_owner=%t", chatAgents, knowledgeOwner, toolOwner)
+	if !chatAgents || !knowledgeOwner || !agentTools || !chatAgentTools {
+		log.Fatalf("database schema verification failed: chat_agents=%t knowledge_owner=%t agent_tools=%t chat_agent_tools=%t",
+			chatAgents, knowledgeOwner, agentTools, chatAgentTools)
 	}
 	log.Println("database migrations applied and chat-agent schema verified successfully")
 }

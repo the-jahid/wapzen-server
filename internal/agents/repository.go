@@ -546,12 +546,16 @@ func (r *Repository) List(ctx context.Context, userID string, limit, offset int)
 // ErrAgentNotFound when no agent has the given id — including when the agent
 // belongs to another user.
 //
-// The knowledge bases and tools it owns go with it, by the ON DELETE CASCADE on
-// their agent_id: they are its property now, not links to shared rows, so this
-// destroys them rather than detaching them. What the cascade cannot reach is the
-// vector store — see the handler, which reads the doomed namespaces before
-// calling this and purges them after it succeeds. A phone number is only
-// referenced, so it is released (ON DELETE SET NULL) and survives.
+// The knowledge bases it owns go with it, by the ON DELETE CASCADE on their
+// agent_id: they are its property, not links to shared rows, so this destroys
+// them rather than detaching them. What the cascade cannot reach is the vector
+// store — see the handler, which reads the doomed namespaces before calling this
+// and purges them after it succeeds.
+//
+// Tools survive: they are shared, so the cascade reaches only this agent's rows
+// in agent_tools, and the definitions stay in the account for the agents that
+// still use them. A phone number is only referenced, so it is released (ON
+// DELETE SET NULL) and survives too.
 func (r *Repository) Delete(ctx context.Context, userID, agentID string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE id = $1 AND user_id = $2`, agentID, userID)
 	if err != nil {

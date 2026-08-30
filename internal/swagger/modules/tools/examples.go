@@ -36,13 +36,14 @@ func createToolRequestExample() oas.Object {
 	}
 }
 
-// apiRequestToolExample is the stored resource the create example produces.
-// agent_id is null: creating a tool only defines it, and an agent claims it
-// afterwards by sending its tools.tool_ids.
+// apiRequestToolExample is the stored resource the create example produces. The
+// attachment lists are empty: creating a tool only defines it, and an agent
+// attaches it afterwards by sending its tools.tool_ids.
 func apiRequestToolExample() oas.Object {
 	tool := createToolRequestExample()
 	tool["id"] = "tool_12345"
-	tool["agent_id"] = nil
+	tool["agent_ids"] = []any{}
+	tool["chat_agent_ids"] = []any{}
 	tool["created_at"] = "2026-08-19T10:00:00Z"
 	tool["updated_at"] = "2026-08-19T10:00:00Z"
 	return tool
@@ -50,16 +51,16 @@ func apiRequestToolExample() oas.Object {
 
 // transferCallToolExample and endCallToolExample round out the list example, so
 // the collection shows what a tool with a different configuration block — and
-// one with none at all — looks like. This one carries an agent_id, so the list
-// also shows the difference between a tool an agent has claimed and one still
-// free to attach.
+// one with none at all — looks like. This one is attached to two agents at once,
+// which is what sharing a single definition looks like in the list.
 func transferCallToolExample() oas.Object {
 	return oas.Object{
-		"id":          "tool_23456",
-		"type":        ToolTypeTransferCall,
-		"name":        "transfer_to_human",
-		"description": "Transfer the caller to the support desk when they ask for a person.",
-		"agent_id":    "agent_12345",
+		"id":             "tool_23456",
+		"type":           ToolTypeTransferCall,
+		"name":           "transfer_to_human",
+		"description":    "Transfer the caller to the support desk when they ask for a person.",
+		"agent_ids":      []any{"agent_12345", "agent_67890"},
+		"chat_agent_ids": []any{},
 		"transfer_call": oas.Object{
 			"destination": "+8801639726992",
 			"message":     "Connecting you to a teammate now, one moment.",
@@ -75,9 +76,12 @@ func endCallToolExample() oas.Object {
 		"type":        ToolTypeEndCall,
 		"name":        "end_call",
 		"description": "Hang up politely once the caller says they are done.",
-		"agent_id":    nil,
-		"created_at":  "2026-08-19T10:10:00Z",
-		"updated_at":  "2026-08-19T10:10:00Z",
+		// Attached to nothing, and a chat agent could not use it anyway: ending a
+		// call is meaningless in a conversation that has none.
+		"agent_ids":      []any{},
+		"chat_agent_ids": []any{},
+		"created_at":     "2026-08-19T10:10:00Z",
+		"updated_at":     "2026-08-19T10:10:00Z",
 	}
 }
 
