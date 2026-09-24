@@ -105,23 +105,95 @@ http://localhost:8080/swagger/index.html
 
 ## Configuration
 
-| Variable                       | Default       | Description                                      |
-| ------------------------------ | ------------- | ------------------------------------------------ |
-| `PORT`                         | `8080`        | Port the HTTP server listens on                  |
-| `APP_ENV`                      | `development` | Application environment label                    |
-| `DATABASE_URL`                 | none          | PostgreSQL connection string                     |
-| `OPENAI_API_KEY`               | none          | OpenAI credential                                |
-| `OPENAI_VOICE_ENABLED`         | `true`        | Enable OpenAI inbound voice calls                 |
-| `OPENAI_REALTIME_ENABLED`      | `true`        | Make the OpenAI Realtime call provider available |
-| `OPENAI_REALTIME_MODEL`        | `gpt-realtime-2.1-mini` | Fallback Realtime model when an agent has no saved model |
-| `OPENAI_REALTIME_SILENCE_MS`   | `250`         | Realtime server-VAD trailing silence before response generation |
-| `OPENAI_VAD_SILENCE_MS`        | `250`         | Local VAD silence used by the standard fallback path |
-| `ANTHROPIC_API_KEY`            | none          | Anthropic credential when an agent uses Claude   |
-| `ELEVENLABS_API_KEY`           | none          | ElevenLabs Scribe, streaming TTS, and voice-library browsing credential |
-| `ELEVENLABS_REALTIME_ENABLED`  | `true`        | Enable ElevenLabs realtime inbound calls          |
-| `ELEVENLABS_VAD_SILENCE_MS`    | `250`         | Trailing caller silence before realtime Scribe commits a turn |
-| `CLERK_SECRET_KEY`             | none          | Clerk backend credential                         |
-| `CLERK_WEBHOOK_SIGNING_SECRET` | none          | Clerk webhook signing secret                      |
+Copy `.env.example` to `.env` and fill in the credentials. The defaults below
+are what the server uses when a variable is unset.
+
+### Core
+
+| Variable                       | Default       | Description                     |
+| ------------------------------ | ------------- | ------------------------------- |
+| `PORT`                         | `8080`        | Port the HTTP server listens on |
+| `APP_ENV`                      | `development` | Application environment label   |
+| `DATABASE_URL`                 | none          | PostgreSQL connection string    |
+| `CLERK_SECRET_KEY`             | none          | Clerk backend credential        |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | none          | Clerk webhook signing secret    |
+
+### Model provider credentials
+
+| Variable             | Default | Description                                                                |
+| -------------------- | ------- | -------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`     | none    | OpenAI credential, shared by every OpenAI voice, text, and embedding call |
+| `ANTHROPIC_API_KEY`  | none    | Anthropic credential when an agent uses Claude                             |
+| `ELEVENLABS_API_KEY` | none    | ElevenLabs Scribe, streaming TTS, and voice-library browsing credential    |
+
+### OpenAI voice (standard pipeline: transcription -> text model -> TTS)
+
+| Variable                       | Default                                          | Description                                                  |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------ |
+| `OPENAI_VOICE_ENABLED`         | `true`                                           | Enable OpenAI inbound voice calls                            |
+| `OPENAI_TRANSCRIPTIONS_URL`    | `https://api.openai.com/v1/audio/transcriptions` | Transcription endpoint                                       |
+| `OPENAI_SPEECH_URL`            | `https://api.openai.com/v1/audio/speech`         | Text-to-speech endpoint                                      |
+| `OPENAI_TRANSCRIBE_MODEL`      | `gpt-4o-mini-transcribe`                         | Model used to transcribe each caller turn                    |
+| `OPENAI_TTS_MODEL`             | `gpt-4o-mini-tts`                                | Default TTS model; agent settings override it per call       |
+| `OPENAI_TTS_VOICE`             | `coral`                                          | Default TTS voice; agent settings override it per call       |
+| `OPENAI_TTS_SPEED`             | `1`                                              | Default spoken rate, `0.25` to `4`                           |
+| `OPENAI_TTS_VOLUME`            | `1`                                              | Default playback gain, `0` to `2`                            |
+| `OPENAI_RESPONSE_INSTRUCTIONS` | short spoken-reply prompt                        | Fallback instructions when an agent has no prompt            |
+| `OPENAI_VAD_RMS_THRESHOLD`     | `0.015`                                          | Audio level counted as caller speech by local turn detection |
+| `OPENAI_VAD_SILENCE_MS`        | `250`                                            | Caller silence before the AI takes its turn                  |
+| `OPENAI_VAD_PREFIX_MS`         | `200`                                            | Audio kept from just before speech was detected              |
+| `OPENAI_VAD_MIN_SPEECH_MS`     | `180`                                            | Shortest sound treated as a real turn                        |
+| `OPENAI_VAD_MAX_UTTERANCE_MS`  | `30000`                                          | Longest caller turn before it is cut and sent                |
+
+### OpenAI Realtime
+
+| Variable                     | Default                 | Description                                                     |
+| ---------------------------- | ----------------------- | --------------------------------------------------------------- |
+| `OPENAI_REALTIME_ENABLED`    | `true`                  | Make the OpenAI Realtime call provider available                |
+| `OPENAI_REALTIME_MODEL`      | `gpt-realtime-2.1-mini` | Fallback Realtime model when an agent has no saved model        |
+| `OPENAI_REALTIME_SILENCE_MS` | `250`                   | Realtime server-VAD trailing silence before response generation |
+
+### ElevenLabs voice
+
+| Variable                               | Default  | Description                                                                                          |
+| -------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `ELEVENLABS_REALTIME_ENABLED`          | `true`   | Enable ElevenLabs realtime inbound calls                                                             |
+| `ELEVENLABS_COMMIT_STRATEGY`           | `manual` | `manual`: the server detects the end of a turn and commits it to Scribe (fastest); `vad`: Scribe decides |
+| `ELEVENLABS_ENDPOINT_SILENCE_MS`       | `250`    | Caller silence before the server commits a turn (`manual` only)                                      |
+| `ELEVENLABS_ENDPOINT_RMS_THRESHOLD`    | `0.015`  | Audio level counted as caller speech (`manual` only)                                                 |
+| `ELEVENLABS_ENDPOINT_MIN_SPEECH_MS`    | `180`    | Shortest sound treated as a real turn (`manual` only)                                                |
+| `ELEVENLABS_ENDPOINT_MAX_UTTERANCE_MS` | `30000`  | Longest caller turn (`manual` only)                                                                  |
+| `ELEVENLABS_VAD_SILENCE_MS`            | `250`    | Trailing silence before Scribe commits a turn (`vad` only)                                           |
+
+### Shared voice tuning
+
+| Variable                 | Default | Description                                                                                                  |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `VOICE_SILENCE_FILL_MS`  | `1500`  | Fills the audio gaps WhatsApp leaves while the caller is silent (DTX) so turn detection advances; `0` disables |
+| `VOICE_REASONING_EFFORT` | `none`  | Reasoning effort asked of reasoning models during calls; `off` leaves the model default                      |
+| `VOICE_TEXT_VERBOSITY`   | `low`   | Keeps spoken replies short                                                                                   |
+
+### Knowledge base (Pinecone)
+
+Without `PINECONE_API_KEY` and `PINECONE_INDEX_HOST` the server still starts,
+but adding sources to a knowledge base answers `503`.
+
+| Variable                   | Default                  | Description                                                    |
+| -------------------------- | ------------------------ | -------------------------------------------------------------- |
+| `OPENAI_EMBEDDING_MODEL`   | `text-embedding-3-large` | Embedding model for knowledge base chunks                      |
+| `PINECONE_API_KEY`         | none                     | Pinecone credential                                            |
+| `PINECONE_INDEX_NAME`      | none                     | Pinecone index name                                            |
+| `PINECONE_INDEX_HOST`      | none                     | Pinecone index host URL                                        |
+| `PINECONE_INDEX_DIMENSION` | `3072`                   | Vector dimension; must match the index and the embedding model |
+
+### WhatsApp and diagnostics
+
+| Variable                     | Default | Description                                                                     |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------- |
+| `WHATSAPP_ANNOUNCE_PRESENCE` | `true`  | Announce available presence on connect; `false` suppresses it                   |
+| `WHATSAPP_LOG_LEVEL`         | `info`  | whatsmeow log level; `debug` logs every stanza, needed to read call signalling |
+| `MEOWCALLER_DIAG_DIR`        | unset   | Write per-call media diagnostics here. The files contain sensitive call data   |
+| `VOICECALL_RECORD_DIR`       | unset   | Record raw caller audio to one WAV per call. The files contain sensitive call data |
 
 ElevenLabs inbound calls do not use an ElevenLabs Agent ID. Audio is transcribed
 live with ElevenLabs Scribe, sent to the OpenAI or Anthropic text model selected
