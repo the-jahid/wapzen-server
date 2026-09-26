@@ -73,6 +73,17 @@ type Resource struct {
 	Prompt        PromptSection     `json:"prompt"`
 	KnowledgeBase AttachmentSection `json:"knowledge_base"`
 	Tools         ToolSection       `json:"tools"`
+	// Runtime is filled by the handler from the running server, never stored.
+	Runtime *RuntimeSection `json:"runtime,omitempty"`
+}
+
+// RuntimeSection reports whether the running server can answer as the agent:
+// if its model provider has an API key here, and why its last WhatsApp reply
+// failed (cleared once a reply goes through).
+type RuntimeSection struct {
+	ProviderConfigured bool       `json:"provider_configured"`
+	LastError          string     `json:"last_error,omitempty"`
+	LastErrorAt        *time.Time `json:"last_error_at,omitempty"`
 }
 
 type CreateRequest struct {

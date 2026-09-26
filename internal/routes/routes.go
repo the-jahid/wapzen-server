@@ -45,7 +45,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	r := chi.NewRouter()
 	webhookHandler := handlers.NewWebhookHandler(deps.UsersRepo, deps.ClerkWebhookSigningSecret)
 	agentHandler := handlers.NewAgentHandler(deps.AgentsRepo, deps.WhatsAppLoginManager, deps.KnowledgeBaseIndexer)
-	chatAgentHandler := handlers.NewChatAgentHandler(deps.ChatAgentsRepo, deps.KnowledgeBaseIndexer)
+	// A nil manager must stay a nil interface, not a typed nil the handler calls.
+	var chatRuntime handlers.ChatRuntimeReporter
+	if deps.WhatsAppLoginManager != nil {
+		chatRuntime = deps.WhatsAppLoginManager
+	}
+	chatAgentHandler := handlers.NewChatAgentHandler(deps.ChatAgentsRepo, deps.KnowledgeBaseIndexer, chatRuntime)
 	chatConversationHandler := handlers.NewChatConversationHandler(deps.ChatConversationsRepo, deps.WhatsAppLoginManager)
 	userHandler := handlers.NewUserHandler()
 	apiKeyHandler := handlers.NewAPIKeyHandler(deps.APIKeysRepo)

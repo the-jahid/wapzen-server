@@ -101,6 +101,10 @@ type Manager struct {
 
 	aiMu      sync.Mutex
 	aiHistory map[string][]aiMessage
+	// chatFailures holds each chat agent's last reply failure (agent ID →
+	// chatFailure) until a reply succeeds, so the dashboard can say why an
+	// agent went quiet instead of the reason living only in the server log.
+	chatFailures sync.Map
 
 	mu       sync.RWMutex
 	sessions map[string]*loginSession
@@ -1791,6 +1795,7 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 		turn.ChatAgentID = agent.ID
 		if !m.ai.Available(agent.ModelProvider) {
 			log.Printf("whatsapp chat agent: %s provider is not configured agent_id=%s phone_number_id=%s", agent.ModelProvider, agent.ID, phoneNumberID)
+			m.noteChatFailure(agent.ID, providerKeyMissing(agent.ModelProvider))
 			m.recordChatTurn(turn, "")
 			return
 		}
@@ -1805,10 +1810,12 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 		reply, err := m.ai.Reply(ctx, *agent, messages, toolbox)
 		if err != nil {
 			log.Printf("whatsapp chat agent: reply failed agent_id=%s phone_number_id=%s: %v", agent.ID, phoneNumberID, err)
+			m.noteChatFailure(agent.ID, "The model request failed: "+err.Error())
 			m.recordChatTurn(turn, "")
 			return
 		}
 		if reply = strings.TrimSpace(reply); reply == "" {
+			m.noteChatFailure(agent.ID, "The model answered with no text, so nothing was sent.")
 			m.recordChatTurn(turn, "")
 			return
 		}
@@ -1818,10 +1825,12 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 			log.Printf("whatsapp chat agent: send reply failed agent_id=%s phone_number_id=%s: %v", agent.ID, phoneNumberID, err)
 			// The answer was written but never delivered, so only the message
 			// that arrived is history.
+			m.noteChatFailure(agent.ID, "The reply was written but WhatsApp would not deliver it: "+err.Error())
 			m.recordChatTurn(turn, "")
 			return
 		}
 		m.appendChatHistory(historyKey, aiMessage{Role: "user", Content: text}, aiMessage{Role: "assistant", Content: reply})
+		m.chatFailures.Delete(agent.ID)
 		m.recordChatTurn(turn, reply)
 		log.Printf("whatsapp chat agent: replied agent_id=%s to=%s phone_number_id=%s", agent.ID, chat.String(), phoneNumberID)
 	}()

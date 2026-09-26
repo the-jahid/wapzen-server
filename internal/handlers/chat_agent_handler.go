@@ -15,13 +15,30 @@ import (
 	"whatsapp-ai-caller-server/internal/models"
 )
 
+// ChatRuntimeReporter reports what the running server knows about serving a
+// chat agent. Optional: without one, responses carry no runtime section.
+type ChatRuntimeReporter interface {
+	ChatAgentRuntime(agentID, provider string) *chatagents.RuntimeSection
+}
+
 type ChatAgentHandler struct {
 	repo    *chatagents.Repository
 	indexer namespacePurger
+	runtime ChatRuntimeReporter
 }
 
-func NewChatAgentHandler(repo *chatagents.Repository, indexer namespacePurger) *ChatAgentHandler {
-	return &ChatAgentHandler{repo: repo, indexer: indexer}
+func NewChatAgentHandler(repo *chatagents.Repository, indexer namespacePurger, runtime ChatRuntimeReporter) *ChatAgentHandler {
+	return &ChatAgentHandler{repo: repo, indexer: indexer, runtime: runtime}
+}
+
+// withRuntime attaches the running server's view of each agent.
+func (h *ChatAgentHandler) withRuntime(resources ...*chatagents.Resource) {
+	if h.runtime == nil {
+		return
+	}
+	for _, resource := range resources {
+		resource.Runtime = h.runtime.ChatAgentRuntime(resource.ID, resource.Model.Provider)
+	}
 }
 
 type chatAgentEnvelope struct {
@@ -64,6 +81,7 @@ func (h *ChatAgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err, "failed to create chat agent")
 		return
 	}
+	h.withRuntime(&resource)
 	writeJSON(w, http.StatusCreated, chatAgentEnvelope{true, "Chat agent created successfully", resource})
 }
 
@@ -82,6 +100,9 @@ func (h *ChatAgentHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "failed to list chat agents"})
 		return
 	}
+	for i := range resources {
+		h.withRuntime(&resources[i])
+	}
 	writeJSON(w, http.StatusOK, chatAgentListEnvelope{true, "Chat agents retrieved successfully", resources, chatAgentListMeta{page, limit, total}})
 }
 
@@ -95,6 +116,7 @@ func (h *ChatAgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err, "failed to get chat agent")
 		return
 	}
+	h.withRuntime(&resource)
 	writeJSON(w, http.StatusOK, chatAgentEnvelope{true, "Chat agent retrieved successfully", resource})
 }
 
@@ -119,6 +141,7 @@ func (h *ChatAgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err, "failed to update chat agent")
 		return
 	}
+	h.withRuntime(&resource)
 	writeJSON(w, http.StatusOK, chatAgentEnvelope{true, "Chat agent updated successfully", resource})
 }
 
