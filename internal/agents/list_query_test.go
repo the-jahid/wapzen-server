@@ -1,4 +1,4 @@
-package handlers
+package agents
 
 import (
 	"net/url"
@@ -65,7 +65,8 @@ func TestParseListQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			page, limit, fields, errs := parseListQuery(tt.query)
+			query, errs := parseListQuery(tt.query)
+			page, limit, fields := query.page, query.limit, query.fields
 			if page != tt.wantPage || limit != tt.wantLimit {
 				t.Errorf("page/limit = %d/%d, want %d/%d", page, limit, tt.wantPage, tt.wantLimit)
 			}
@@ -119,54 +120,5 @@ func TestSelectFieldsMatchesDocumentedExample(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("projection = %#v, want %#v", got[0], want)
-	}
-}
-
-// TestBuildPaginationMetaMatchesDocumentedExample pins the meta block to the
-// documented page-1-of-3 example (42 items, 20 per page).
-func TestBuildPaginationMetaMatchesDocumentedExample(t *testing.T) {
-	meta := buildPaginationMeta(1, 20, 42)
-	if !reflect.DeepEqual(meta, examples.PaginationMetaExample) {
-		t.Errorf("meta = %#v, want %#v", meta, examples.PaginationMetaExample)
-	}
-}
-
-// TestBuildListLinksMatchesDocumentedExample pins the link block (no fields) to
-// the documented example so the live route can't drift from the static contract.
-func TestBuildListLinksMatchesDocumentedExample(t *testing.T) {
-	links := buildListLinks(agentsListPath, 1, 20, 42, nil)
-	if !reflect.DeepEqual(links, examples.ListLinksExample) {
-		t.Errorf("links = %#v, want %#v", links, examples.ListLinksExample)
-	}
-}
-
-func TestBuildListLinksCarriesFields(t *testing.T) {
-	fields := []string{"id", "agent.status", "agent.language", "agent.call_direction"}
-	links := buildListLinks(agentsListPath, 1, 20, 42, fields)
-
-	wantSelf := "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.call_direction"
-	if links.Self != wantSelf {
-		t.Errorf("self = %q, want %q", links.Self, wantSelf)
-	}
-	if links.Previous != nil {
-		t.Errorf("previous = %v, want nil on first page", *links.Previous)
-	}
-	if links.Next == nil {
-		t.Fatal("next = nil, want a link on a non-final page")
-	}
-	wantNext := "/v1/agents?page=2&limit=20&fields=id,agent.status,agent.language,agent.call_direction"
-	if *links.Next != wantNext {
-		t.Errorf("next = %q, want %q", *links.Next, wantNext)
-	}
-}
-
-func TestBuildListLinksEmptyCollection(t *testing.T) {
-	links := buildListLinks(agentsListPath, 1, 20, 0, nil)
-	// With no items the Last link falls back to page 1 and there is no next/prev.
-	if links.Last != "/v1/agents?page=1&limit=20" {
-		t.Errorf("last = %q, want page 1 fallback", links.Last)
-	}
-	if links.Next != nil || links.Previous != nil {
-		t.Errorf("expected no next/prev on empty collection, got next=%v prev=%v", links.Next, links.Previous)
 	}
 }

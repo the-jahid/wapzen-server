@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -19,6 +20,16 @@ import (
 // chat agent. Optional: without one, responses carry no runtime section.
 type ChatRuntimeReporter interface {
 	ChatAgentRuntime(agentID, provider string) *chatagents.RuntimeSection
+}
+
+// namespacePurger deletes a knowledge base's vectors from the vector store.
+// Satisfied by *knowledgebases.Indexer. Deleting a chat agent cascades to the
+// knowledge bases it owns, and the rows going away does not take their vectors
+// with them — this is how the handler cleans up after the cascade. May be nil,
+// and reports Enabled() false when indexing is not configured.
+type namespacePurger interface {
+	Enabled() bool
+	PurgeNamespace(ctx context.Context, kb models.KnowledgeBase) error
 }
 
 type ChatAgentHandler struct {

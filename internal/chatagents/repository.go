@@ -43,6 +43,30 @@ func scanRow(scanner interface{ Scan(...any) error }) (Resource, error) {
 	return resource, err
 }
 
+// DefaultAgentName is the name of the starter chat agent every new account gets.
+const DefaultAgentName = "My First Chat Agent"
+
+// CreateDefault inserts the starter chat agent for a brand-new user. It runs
+// inside the transaction that creates the user (main registers it as a
+// users.NewUserHook), so the user and the agent exist together or not at all.
+// The model settings are written explicitly because the Go defaults, which the
+// create endpoint also applies, differ from the older column defaults. It
+// starts paused: a new account has no phone number yet, and a chat agent may
+// only be live with one.
+func (r *Repository) CreateDefault(ctx context.Context, tx pgx.Tx, userID string) error {
+	const query = `INSERT INTO chat_agents (
+		user_id, agent_name, status,
+		model_provider, model_name, model_temperature, prompt_system_prompt
+	) VALUES ($1,$2,$3,$4,$5,$6,$7)`
+	if _, err := tx.Exec(ctx, query,
+		userID, DefaultAgentName, DefaultStatus,
+		DefaultProvider, DefaultModel, DefaultTemperature, DefaultSystemPrompt,
+	); err != nil {
+		return fmt.Errorf("insert default chat agent: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) Create(ctx context.Context, userID string, req CreateRequest) (Resource, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

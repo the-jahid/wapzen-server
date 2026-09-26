@@ -8,10 +8,10 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
-// TestParseAgentUpdateScalars pins the column/value mapping for the documented
+// TestParsePatchScalars pins the column/value mapping for the documented
 // partial-update example plus the nullable and nested cases the mapping must get
 // right (explicit null clears a column; nested sections descend correctly).
-func TestParseAgentUpdateScalars(t *testing.T) {
+func TestParsePatchScalars(t *testing.T) {
 	tests := []struct {
 		name     string
 		body     string
@@ -82,31 +82,32 @@ func TestParseAgentUpdateScalars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			set, knowledgeBases, toolIDs, err := parseAgentUpdate([]byte(tt.body))
+			patch, err := parsePatch([]byte(tt.body))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if knowledgeBases != nil || toolIDs != nil {
+			if patch.changesAttachments() {
 				t.Fatalf("expected no attachment sets, got knowledgeBases=%v toolIDs=%v",
-					knowledgeBases, toolIDs)
+					patch.knowledgeBaseIDs, patch.toolIDs)
 			}
-			if !reflect.DeepEqual(set.cols, tt.wantCols) {
-				t.Errorf("cols = %#v, want %#v", set.cols, tt.wantCols)
+			if !reflect.DeepEqual(patch.columns.cols, tt.wantCols) {
+				t.Errorf("cols = %#v, want %#v", patch.columns.cols, tt.wantCols)
 			}
-			if !reflect.DeepEqual(set.args, tt.wantArgs) {
-				t.Errorf("args = %#v, want %#v", set.args, tt.wantArgs)
+			if !reflect.DeepEqual(patch.columns.args, tt.wantArgs) {
+				t.Errorf("args = %#v, want %#v", patch.columns.args, tt.wantArgs)
 			}
 		})
 	}
 }
 
-// TestParseAgentUpdateChildPresence checks the "present means replace, absent
+// TestParsePatchChildPresence checks the "present means replace, absent
 // means leave unchanged" rule for the attachment sets, including the
 // empty-value (clear) case.
-func TestParseAgentUpdateChildPresence(t *testing.T) {
+func TestParsePatchChildPresence(t *testing.T) {
 	t.Run("knowledge_base_ids present replaces", func(t *testing.T) {
 		body := `{"knowledge_base":{"knowledge_base_ids":["kb_1","kb_2"]}}`
-		_, knowledgeBases, _, err := parseAgentUpdate([]byte(body))
+		patch, err := parsePatch([]byte(body))
+		knowledgeBases := patch.knowledgeBaseIDs
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -121,7 +122,8 @@ func TestParseAgentUpdateChildPresence(t *testing.T) {
 	// An empty list is how the UI detaches every knowledge base, so it has to
 	// survive parsing as "replace with nothing" rather than "unchanged".
 	t.Run("empty knowledge_base_ids detaches all", func(t *testing.T) {
-		_, knowledgeBases, _, err := parseAgentUpdate([]byte(`{"knowledge_base":{"knowledge_base_ids":[]}}`))
+		patch, err := parsePatch([]byte(`{"knowledge_base":{"knowledge_base_ids":[]}}`))
+		knowledgeBases := patch.knowledgeBaseIDs
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -134,7 +136,8 @@ func TestParseAgentUpdateChildPresence(t *testing.T) {
 	})
 
 	t.Run("absent knowledge_base leaves attachments unchanged", func(t *testing.T) {
-		_, knowledgeBases, _, err := parseAgentUpdate([]byte(`{"agent":{"name":"x"}}`))
+		patch, err := parsePatch([]byte(`{"agent":{"name":"x"}}`))
+		knowledgeBases := patch.knowledgeBaseIDs
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -144,10 +147,10 @@ func TestParseAgentUpdateChildPresence(t *testing.T) {
 	})
 }
 
-// TestNormalizeKnowledgeBaseIDs pins what the attachment writer accepts: blanks
-// disappear, surrounding whitespace is not part of an id, and a repeated id
-// attaches once — attaching twice is the same state as attaching once.
-func TestNormalizeKnowledgeBaseIDs(t *testing.T) {
+// TestNormalizeIDs pins what the attachment writers accept: blanks disappear,
+// surrounding whitespace is not part of an id, and a repeated id attaches once
+// — attaching twice is the same state as attaching once.
+func TestNormalizeIDs(t *testing.T) {
 	cases := []struct {
 		name string
 		in   []string
@@ -160,16 +163,16 @@ func TestNormalizeKnowledgeBaseIDs(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := normalizeKnowledgeBaseIDs(c.in); !reflect.DeepEqual(got, c.want) {
-				t.Errorf("normalizeKnowledgeBaseIDs(%#v) = %#v, want %#v", c.in, got, c.want)
+			if got := normalizeIDs(c.in); !reflect.DeepEqual(got, c.want) {
+				t.Errorf("normalizeIDs(%#v) = %#v, want %#v", c.in, got, c.want)
 			}
 		})
 	}
 }
 
-// TestParseAgentUpdateInvalid confirms malformed bodies and wrong-typed fields
-// surface as *InvalidRequestError so the handler can answer 400.
-func TestParseAgentUpdateInvalid(t *testing.T) {
+// TestParsePatchInvalid confirms malformed bodies and wrong-typed fields
+// surface as *ValidationError so the handler can answer 400.
+func TestParsePatchInvalid(t *testing.T) {
 	bodies := map[string]string{
 		"not an object":      `"just a string"`,
 		"wrong scalar type":  `{"model":{"temperature":"hot"}}`,
@@ -178,10 +181,10 @@ func TestParseAgentUpdateInvalid(t *testing.T) {
 	}
 	for name, body := range bodies {
 		t.Run(name, func(t *testing.T) {
-			_, _, _, err := parseAgentUpdate([]byte(body))
-			var invalid *InvalidRequestError
-			if !errors.As(err, &invalid) {
-				t.Fatalf("err = %v, want *InvalidRequestError", err)
+			_, err := parsePatch([]byte(body))
+			var validation *ValidationError
+			if !errors.As(err, &validation) {
+				t.Fatalf("err = %v, want *ValidationError", err)
 			}
 		})
 	}
@@ -191,19 +194,19 @@ func TestParseAgentUpdateInvalid(t *testing.T) {
 // phone number" guard: which columns arm the check, and what counts as a real
 // phone assignment (NULL and blank strings do not).
 func TestGoLiveInvariantHelpers(t *testing.T) {
-	t.Run("columnsInclude", func(t *testing.T) {
-		cols := []string{"agent_name", "status", "phone_number_id"}
-		if !columnsInclude(cols, "status") {
-			t.Error("columnsInclude(status) = false, want true")
+	t.Run("columnSet.has", func(t *testing.T) {
+		set := columnSet{cols: []string{"agent_name", "status", "phone_number_id"}}
+		if !set.has("status") {
+			t.Error("has(status) = false, want true")
 		}
-		if !columnsInclude(cols, "phone_number_id") {
-			t.Error("columnsInclude(phone_number_id) = false, want true")
+		if !set.has("phone_number_id") {
+			t.Error("has(phone_number_id) = false, want true")
 		}
-		if columnsInclude(cols, "language") {
-			t.Error("columnsInclude(language) = true, want false")
+		if set.has("language") {
+			t.Error("has(language) = true, want false")
 		}
-		if columnsInclude(nil, "status") {
-			t.Error("columnsInclude(nil, status) = true, want false")
+		if (&columnSet{}).has("status") {
+			t.Error("empty set has(status) = true, want false")
 		}
 	})
 

@@ -19,18 +19,27 @@ type UpsertParams struct {
 	Username *string
 }
 
+// NewUserHook provisions something every new account starts with. It runs
+// inside the transaction that inserts the user, so what it creates exists with
+// the user or not at all; an error rolls the whole signup back.
+type NewUserHook func(ctx context.Context, tx pgx.Tx, userID string) error
+
 // Repository owns persistence for application users.
 type Repository struct {
-	pool *pgxpool.Pool
+	pool      *pgxpool.Pool
+	onNewUser []NewUserHook
 }
 
-// NewRepository creates a users repository backed by pgxpool.
-func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+// NewRepository creates a users repository backed by pgxpool. onNewUser runs,
+// in order, for every newly inserted user (see NewUserHook) — main registers
+// the starter agent this way, so this package need not know about agents.
+func NewRepository(pool *pgxpool.Pool, onNewUser ...NewUserHook) *Repository {
+	return &Repository{pool: pool, onNewUser: onNewUser}
 }
 
 // Upsert creates or updates a user by Clerk user ID. A newly inserted user also
-// receives one automatic default API key; updates never create extra keys.
+// receives one automatic default API key and whatever the NewUserHooks
+// provision; updates never create any of them again.
 func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.User, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -49,6 +58,11 @@ func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.Us
 	if err == nil {
 		if _, err := apikeys.CreateDefaultWithQuerier(ctx, tx, user.ID); err != nil {
 			return models.User{}, fmt.Errorf("create default api key: %w", err)
+		}
+		for _, hook := range r.onNewUser {
+			if err := hook(ctx, tx, user.ID); err != nil {
+				return models.User{}, fmt.Errorf("provision new user: %w", err)
+			}
 		}
 	} else if errors.Is(err, pgx.ErrNoRows) {
 		const updateQuery = `

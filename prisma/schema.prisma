@@ -1,0 +1,544 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model agent_tools {
+  agent_id   String
+  tool_id    String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  agents     agents   @relation(fields: [agent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tools      tools    @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([agent_id, tool_id])
+  @@index([tool_id], map: "idx_agent_tools_tool_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model agents {
+  id                            String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id                       String
+  agent_name                    String
+  language                      String               @default("en-US")
+  timezone                      String?
+  call_direction                String               @default("outbound")
+  status                        String               @default("active")
+  model_provider                String               @default("openai")
+  model_name                    String               @default("gpt-4.1-mini")
+  model_temperature             Float?               @default(0.3)
+  prompt_begin_message_mode     String               @default("agent_speaks_first")
+  prompt_begin_message          String?              @default("Hello! How can I help you today?")
+  prompt_begin_message_delay_ms Int?                 @default(1000)
+  prompt_system_prompt          String?              @default("You are a helpful, friendly voice assistant on a phone call. Keep responses clear and concise, speak naturally, and stay polite and professional at all times.")
+  voice_provider                String?              @default("openai_realtime")
+  voice_elevenlabs_voice_id     String               @default("DODLEQrClDo8wCz460ld")
+  voice_elevenlabs_voice_name   String               @default("Lauren")
+  voice_elevenlabs_voice_model  String               @default("eleven_turbo_v2_5")
+  voice_openai_voice_id         String               @default("alloy")
+  voice_openai_voice_name       String               @default("Alloy")
+  voice_openai_voice_model      String               @default("tts-1")
+  voice_openai_instructions     String?
+  transcriber_provider          String               @default("openai")
+  transcriber_language          String               @default("en")
+  transcriber_openai_model      String               @default("gpt-4o-transcribe")
+  transcriber_elevenlabs_model  String               @default("scribe_v2")
+  post_call_analysis_provider   String               @default("openai")
+  post_call_analysis_model      String?
+  created_at                    DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime             @default(now()) @db.Timestamptz(6)
+  phone_number_id               String?
+  voice_openai_speed            Float                @default(1)
+  voice_openai_volume           Float                @default(1)
+  voice_openai_realtime_model   String               @default("gpt-realtime-2.1-mini")
+  agent_tools                   agent_tools[]
+  phone_numbers                 phone_numbers?       @relation(fields: [phone_number_id], references: [id], onUpdate: NoAction)
+  users                         users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  calls                         calls[]
+  knowledge_bases               knowledge_bases[]
+  outbound_campaigns            outbound_campaigns[]
+
+  @@unique([user_id, agent_name])
+  @@index([user_id], map: "idx_agents_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model api_keys {
+  id           String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id      String
+  name         String    @default("Default")
+  key_hash     String    @unique
+  key_prefix   String
+  last_used_at DateTime? @db.Timestamptz(6)
+  revoked_at   DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+  is_default   Boolean   @default(false)
+  users        users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_api_keys_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model call_messages {
+  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  call_id    String
+  seq        Int
+  role       String
+  content    String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  calls      calls    @relation(fields: [call_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([call_id, seq])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model calls {
+  id                 String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  call_id            String
+  user_id            String
+  phone_number_id    String?
+  peer               String
+  status             String              @default("received")
+  end_reason         String?
+  answered_at        DateTime?           @db.Timestamptz(6)
+  ended_at           DateTime?           @db.Timestamptz(6)
+  created_at         DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime            @default(now()) @db.Timestamptz(6)
+  call_type          String              @default("inbound")
+  agent_id           String?
+  duration_seconds   Int?
+  campaign_id        String?
+  lead_id            String?
+  call_messages      call_messages[]
+  agents             agents?             @relation(fields: [agent_id], references: [id], onUpdate: NoAction)
+  outbound_campaigns outbound_campaigns? @relation(fields: [campaign_id], references: [id], onUpdate: NoAction)
+  campaign_leads     campaign_leads?     @relation(fields: [lead_id], references: [id], onUpdate: NoAction)
+  phone_numbers      phone_numbers?      @relation(fields: [phone_number_id], references: [id], onUpdate: NoAction)
+  users              users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([call_id], map: "idx_calls_call_id")
+  @@index([phone_number_id], map: "idx_calls_phone_number_id")
+  @@index([user_id], map: "idx_calls_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model campaign_leads {
+  id                 String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  campaign_id        String
+  phone_number       String
+  email              String?
+  first_name         String?
+  last_name          String?
+  status             String             @default("pending")
+  attempts           Int                @default(0)
+  last_attempted_at  DateTime?          @db.Timestamptz(6)
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime           @default(now()) @db.Timestamptz(6)
+  calls              calls[]
+  outbound_campaigns outbound_campaigns @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([campaign_id, phone_number])
+  @@index([campaign_id], map: "idx_campaign_leads_campaign_id")
+  @@index([campaign_id, status], map: "idx_campaign_leads_campaign_status")
+}
+
+model chat_agent_tools {
+  chat_agent_id String
+  tool_id       String
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  chat_agents   chat_agents @relation(fields: [chat_agent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tools         tools       @relation(fields: [tool_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([chat_agent_id, tool_id])
+  @@index([tool_id], map: "idx_chat_agent_tools_tool_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model chat_agents {
+  id                   String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id              String
+  agent_name           String
+  phone_number_id      String?              @unique
+  status               String               @default("inactive")
+  model_provider       String               @default("openai")
+  model_name           String               @default("gpt-4.1-mini")
+  model_temperature    Float                @default(0.3)
+  prompt_system_prompt String               @default("You are a helpful, friendly WhatsApp chat assistant.")
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime             @default(now()) @db.Timestamptz(6)
+  chat_agent_tools     chat_agent_tools[]
+  phone_numbers        phone_numbers?       @relation(fields: [phone_number_id], references: [id], onUpdate: NoAction)
+  users                users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chat_conversations   chat_conversations[]
+  knowledge_bases      knowledge_bases[]
+
+  @@unique([user_id, agent_name])
+  @@index([user_id], map: "idx_chat_agents_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model chat_conversations {
+  id                String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id           String
+  phone_number_id   String?
+  chat_agent_id     String?
+  peer_jid          String
+  peer_phone        String?
+  peer_name         String?
+  status            String          @default("open")
+  message_count     Int             @default(0)
+  last_message_role String?
+  last_message_at   DateTime?       @db.Timestamptz(6)
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime        @default(now()) @db.Timestamptz(6)
+  chat_agents       chat_agents?    @relation(fields: [chat_agent_id], references: [id], onUpdate: NoAction)
+  phone_numbers     phone_numbers?  @relation(fields: [phone_number_id], references: [id], onUpdate: NoAction)
+  users             users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chat_messages     chat_messages[]
+
+  @@index([user_id, last_message_at(sort: Desc)], map: "idx_chat_conversations_user_recent")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model chat_messages {
+  id                 String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  conversation_id    String
+  seq                Int
+  role               String
+  content            String
+  wa_message_id      String?
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  chat_conversations chat_conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conversation_id, seq])
+}
+
+model goose_db_version {
+  id         Int      @id @default(autoincrement())
+  version_id BigInt
+  is_applied Boolean
+  tstamp     DateTime @default(now()) @db.Timestamp(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model knowledge_base_sources {
+  id                String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  knowledge_base_id String
+  type              String          @default("text")
+  title             String
+  content           String
+  chunk_count       Int             @default(0)
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime        @default(now()) @db.Timestamptz(6)
+  knowledge_bases   knowledge_bases @relation(fields: [knowledge_base_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([knowledge_base_id, title], map: "idx_knowledge_base_sources_title_unique")
+  @@index([knowledge_base_id, created_at], map: "idx_knowledge_base_sources_kb_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model knowledge_bases {
+  id                     String                   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id                String
+  knowledge_base_name    String
+  status                 String                   @default("in_progress")
+  enable_auto_refresh    Boolean                  @default(false)
+  last_refreshed_at      DateTime?                @db.Timestamptz(6)
+  max_chunk_size         Int                      @default(2000)
+  min_chunk_size         Int                      @default(400)
+  pinecone_namespace     String?
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  agent_id               String?
+  chat_agent_id          String?
+  knowledge_base_sources knowledge_base_sources[]
+  agents                 agents?                  @relation(fields: [agent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chat_agents            chat_agents?             @relation(fields: [chat_agent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                  users                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, knowledge_base_name], map: "idx_knowledge_bases_user_name_unique")
+  @@index([user_id], map: "idx_knowledge_bases_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model outbound_campaigns {
+  id                  String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id             String
+  campaign_name       String
+  status              String           @default("draft")
+  leads_count         Int              @default(0)
+  calls_placed        Int              @default(0)
+  answered_calls      Int              @default(0)
+  successful_calls    Int              @default(0)
+  today_calls         Int              @default(0)
+  total_usage_seconds Int              @default(0)
+  budget_usd          Decimal?         @db.Decimal(12, 2)
+  started_at          DateTime?        @db.Timestamptz(6)
+  completed_at        DateTime?        @db.Timestamptz(6)
+  created_at          DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime         @default(now()) @db.Timestamptz(6)
+  agent_id            String?
+  calls               calls[]
+  campaign_leads      campaign_leads[]
+  agents              agents?          @relation(fields: [agent_id], references: [id], onUpdate: NoAction)
+  users               users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, campaign_name], map: "idx_outbound_campaigns_user_name_unique")
+  @@index([user_id], map: "idx_outbound_campaigns_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model phone_numbers {
+  id                 String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id            String
+  phone_number       String?
+  label              String?
+  wa_jid             String?
+  status             String               @default("pending_qr")
+  qr_code            String?
+  last_connected_at  DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  agents             agents[]
+  calls              calls[]
+  chat_agents        chat_agents?
+  chat_conversations chat_conversations[]
+  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_phone_numbers_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tools {
+  id               String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id          String
+  type             String
+  tool_name        String
+  description      String
+  config           Json               @default("{}")
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  agent_tools      agent_tools[]
+  chat_agent_tools chat_agent_tools[]
+  users            users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, tool_name], map: "idx_tools_user_name_unique")
+  @@index([user_id], map: "idx_tools_user_id")
+}
+
+model users {
+  id                 String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  email              String               @unique
+  oauth_id           String               @unique
+  username           String?
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  agents             agents[]
+  api_keys           api_keys[]
+  calls              calls[]
+  chat_agents        chat_agents[]
+  chat_conversations chat_conversations[]
+  knowledge_bases    knowledge_bases[]
+  outbound_campaigns outbound_campaigns[]
+  phone_numbers      phone_numbers[]
+  tools              tools[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model whatsmeow_app_state_mutation_macs {
+  jid                         String
+  name                        String
+  version                     BigInt
+  index_mac                   Bytes
+  value_mac                   Bytes
+  whatsmeow_app_state_version whatsmeow_app_state_version @relation(fields: [jid, name], references: [jid, name], onDelete: Cascade)
+
+  @@id([jid, name, version, index_mac])
+}
+
+model whatsmeow_app_state_sync_keys {
+  jid              String
+  key_id           Bytes
+  key_data         Bytes
+  timestamp        BigInt
+  fingerprint      Bytes
+  whatsmeow_device whatsmeow_device @relation(fields: [jid], references: [jid], onDelete: Cascade)
+
+  @@id([jid, key_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model whatsmeow_app_state_version {
+  jid                               String
+  name                              String
+  version                           BigInt
+  hash                              Bytes
+  whatsmeow_app_state_mutation_macs whatsmeow_app_state_mutation_macs[]
+  whatsmeow_device                  whatsmeow_device                    @relation(fields: [jid], references: [jid], onDelete: Cascade)
+
+  @@id([jid, name])
+}
+
+model whatsmeow_chat_settings {
+  our_jid          String
+  chat_jid         String
+  muted_until      BigInt           @default(0)
+  pinned           Boolean          @default(false)
+  archived         Boolean          @default(false)
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, chat_jid])
+}
+
+model whatsmeow_contacts {
+  our_jid          String
+  their_jid        String
+  first_name       String?
+  full_name        String?
+  push_name        String?
+  business_name    String?
+  redacted_phone   String?
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, their_jid])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model whatsmeow_device {
+  jid                           String                          @id
+  lid                           String?
+  facebook_uuid                 String?                         @db.Uuid
+  registration_id               BigInt
+  noise_key                     Bytes
+  identity_key                  Bytes
+  signed_pre_key                Bytes
+  signed_pre_key_id             Int
+  signed_pre_key_sig            Bytes
+  adv_key                       Bytes
+  adv_details                   Bytes
+  adv_account_sig               Bytes
+  adv_account_sig_key           Bytes
+  adv_device_sig                Bytes
+  platform                      String                          @default("")
+  business_name                 String                          @default("")
+  push_name                     String                          @default("")
+  lid_migration_ts              BigInt                          @default(0)
+  whatsmeow_app_state_sync_keys whatsmeow_app_state_sync_keys[]
+  whatsmeow_app_state_version   whatsmeow_app_state_version[]
+  whatsmeow_chat_settings       whatsmeow_chat_settings[]
+  whatsmeow_contacts            whatsmeow_contacts[]
+  whatsmeow_event_buffer        whatsmeow_event_buffer[]
+  whatsmeow_identity_keys       whatsmeow_identity_keys[]
+  whatsmeow_message_secrets     whatsmeow_message_secrets[]
+  whatsmeow_nct_salt            whatsmeow_nct_salt?
+  whatsmeow_pre_keys            whatsmeow_pre_keys[]
+  whatsmeow_retry_buffer        whatsmeow_retry_buffer[]
+  whatsmeow_sender_keys         whatsmeow_sender_keys[]
+  whatsmeow_sessions            whatsmeow_sessions[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model whatsmeow_event_buffer {
+  our_jid          String
+  ciphertext_hash  Bytes
+  plaintext        Bytes?
+  server_timestamp BigInt
+  insert_timestamp BigInt
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, ciphertext_hash])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model whatsmeow_identity_keys {
+  our_jid          String
+  their_id         String
+  identity         Bytes
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, their_id])
+}
+
+model whatsmeow_lid_map {
+  lid String @id
+  pn  String @unique
+}
+
+model whatsmeow_message_secrets {
+  our_jid          String
+  chat_jid         String
+  sender_jid       String
+  message_id       String
+  key              Bytes
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, chat_jid, sender_jid, message_id])
+}
+
+model whatsmeow_nct_salt {
+  our_jid          String           @id
+  salt             Bytes
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model whatsmeow_pre_keys {
+  jid              String
+  key_id           Int
+  key              Bytes
+  uploaded         Boolean
+  whatsmeow_device whatsmeow_device @relation(fields: [jid], references: [jid], onDelete: Cascade)
+
+  @@id([jid, key_id])
+}
+
+model whatsmeow_privacy_tokens {
+  our_jid          String
+  their_jid        String
+  token            Bytes
+  timestamp        BigInt
+  sender_timestamp BigInt?
+
+  @@id([our_jid, their_jid])
+  @@index([our_jid, timestamp], map: "idx_whatsmeow_privacy_tokens_our_jid_timestamp")
+}
+
+model whatsmeow_retry_buffer {
+  our_jid          String
+  chat_jid         String
+  message_id       String
+  format           String
+  plaintext        Bytes
+  timestamp        BigInt
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, chat_jid, message_id])
+  @@index([our_jid, timestamp], map: "whatsmeow_retry_buffer_timestamp_idx")
+}
+
+model whatsmeow_sender_keys {
+  our_jid          String
+  chat_id          String
+  sender_id        String
+  sender_key       Bytes
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, chat_id, sender_id])
+}
+
+model whatsmeow_sessions {
+  our_jid          String
+  their_id         String
+  session          Bytes?
+  whatsmeow_device whatsmeow_device @relation(fields: [our_jid], references: [jid], onDelete: Cascade)
+
+  @@id([our_jid, their_id])
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model whatsmeow_version {
+  version Int?
+  compat  Int?
+
+  @@ignore
+}

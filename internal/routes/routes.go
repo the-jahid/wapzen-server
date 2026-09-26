@@ -44,7 +44,12 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	r := chi.NewRouter()
 	webhookHandler := handlers.NewWebhookHandler(deps.UsersRepo, deps.ClerkWebhookSigningSecret)
-	agentHandler := handlers.NewAgentHandler(deps.AgentsRepo, deps.WhatsAppLoginManager, deps.KnowledgeBaseIndexer)
+	// A nil manager must stay a nil interface, not a typed nil the service calls.
+	var inboundRefresher agents.InboundCallRefresher
+	if deps.WhatsAppLoginManager != nil {
+		inboundRefresher = deps.WhatsAppLoginManager
+	}
+	agentController := agents.NewController(agents.NewService(deps.AgentsRepo, inboundRefresher, deps.KnowledgeBaseIndexer))
 	// A nil manager must stay a nil interface, not a typed nil the handler calls.
 	var chatRuntime handlers.ChatRuntimeReporter
 	if deps.WhatsAppLoginManager != nil {
@@ -120,11 +125,11 @@ func NewRouter(deps Dependencies) http.Handler {
 
 		// Dashboard agent access uses the logged-in user. Public live API
 		// routes below remain API-key-only for external callers.
-		r.Post("/v1/dashboard/agents", agentHandler.Create)
-		r.Get("/v1/dashboard/agents", agentHandler.List)
-		r.Get("/v1/dashboard/agents/{agent_id}", agentHandler.Get)
-		r.Patch("/v1/dashboard/agents/{agent_id}", agentHandler.Update)
-		r.Delete("/v1/dashboard/agents/{agent_id}", agentHandler.Delete)
+		r.Post("/v1/dashboard/agents", agentController.Create)
+		r.Get("/v1/dashboard/agents", agentController.List)
+		r.Get("/v1/dashboard/agents/{agent_id}", agentController.Get)
+		r.Patch("/v1/dashboard/agents/{agent_id}", agentController.Update)
+		r.Delete("/v1/dashboard/agents/{agent_id}", agentController.Delete)
 
 		// Dashboard chat agents use the Clerk-authenticated account and control
 		// the behaviour of incoming WhatsApp text messages in real time.
@@ -200,11 +205,11 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Use(authMW.RequireAPIKeyUser)
 
 		// Agents. Every operation is scoped to the authenticated API key owner.
-		r.Post("/v1/agents", agentHandler.Create)
-		r.Get("/v1/agents", agentHandler.List)
-		r.Get("/v1/agents/{agent_id}", agentHandler.Get)
-		r.Patch("/v1/agents/{agent_id}", agentHandler.Update)
-		r.Delete("/v1/agents/{agent_id}", agentHandler.Delete)
+		r.Post("/v1/agents", agentController.Create)
+		r.Get("/v1/agents", agentController.List)
+		r.Get("/v1/agents/{agent_id}", agentController.Get)
+		r.Patch("/v1/agents/{agent_id}", agentController.Update)
+		r.Delete("/v1/agents/{agent_id}", agentController.Delete)
 
 		// API-key chat-agent CRUD mirrors the dashboard routes above.
 		r.Post("/v1/chat-agents", chatAgentHandler.Create)

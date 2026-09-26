@@ -77,9 +77,11 @@ func main() {
 		log.Fatalf("clerk configuration failed: %v", err)
 	}
 
-	usersRepo := users.NewRepository(pool)
 	agentsRepo := agents.NewRepository(pool)
 	chatAgentsRepo := chatagents.NewRepository(pool)
+	// Every new account starts with a paused starter voice agent and a paused
+	// starter chat agent, created in the same transaction as the user.
+	usersRepo := users.NewRepository(pool, agentsRepo.CreateDefault, chatAgentsRepo.CreateDefault)
 	chatConversationsRepo := chatconversations.NewRepository(pool)
 	apiKeysRepo := apikeys.NewRepository(pool)
 	phoneNumbersRepo := phonenumbers.NewRepository(pool)
