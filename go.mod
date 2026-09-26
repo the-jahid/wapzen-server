@@ -2,7 +2,7 @@ module whatsapp-ai-caller-server
 
 go 1.25.7
 
-replace github.com/purpshell/meowcaller => ../third_party/meowcaller
+replace github.com/purpshell/meowcaller => ./third_party/meowcaller
 
 require (
 	github.com/clerk/clerk-sdk-go/v2 v2.7.0

@@ -1,8 +1,6 @@
 # Environment
 .env
 
-# Generated Swagger docs
-docs/
 
 # Build / runtime artifacts
 tmp/
