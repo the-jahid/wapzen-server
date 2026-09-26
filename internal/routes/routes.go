@@ -37,6 +37,7 @@ type Dependencies struct {
 	WhatsAppLoginManager      *whatsapplogin.Manager
 	ClerkWebhookSigningSecret string
 	ElevenLabsAPIKey          string
+	CORSAllowedOrigins        []string
 }
 
 // NewRouter builds the chi router with all middleware and routes registered.
@@ -75,7 +76,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	r.Use(chimiddleware.Recoverer)
 
 	// Custom CORS middleware.
-	r.Use(appmiddleware.CORS)
+	r.Use(appmiddleware.CORS(deps.CORSAllowedOrigins))
 
 	// Health check.
 	r.Get("/health", handlers.HealthCheck)

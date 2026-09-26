@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func corsRequest(method, origin string) *httptest.ResponseRecorder {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func corsRequest(method, origin string, allowedOrigins ...string) *httptest.ResponseRecorder {
+	handler := CORS(allowedOrigins)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(method, "/v1/agents", nil)
@@ -50,6 +50,24 @@ func TestCORSRejectsOtherOrigins(t *testing.T) {
 		if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "" {
 			t.Fatalf("%s got Allow-Origin %q, want none", origin, got)
 		}
+	}
+}
+
+func TestCORSAllowsConfiguredOrigins(t *testing.T) {
+	allowed := []string{"https://wapzen.io", "http://localhost:3000"}
+	for _, origin := range allowed {
+		resp := corsRequest(http.MethodOptions, origin, allowed...)
+		if resp.Code != http.StatusNoContent {
+			t.Fatalf("%s preflight status = %d, want %d", origin, resp.Code, http.StatusNoContent)
+		}
+		if got := resp.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("%s got Allow-Origin %q, want %q", origin, got, origin)
+		}
+	}
+
+	resp := corsRequest(http.MethodOptions, "http://localhost:3001", allowed...)
+	if resp.Code != http.StatusForbidden || resp.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("unlisted origin: status = %d, Allow-Origin = %q", resp.Code, resp.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
 

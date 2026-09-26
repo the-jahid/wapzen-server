@@ -19,13 +19,14 @@ const defaultPineconeIndexDimension = 3072
 
 // Config holds all environment-driven settings for the server.
 type Config struct {
-	Port                      string // HTTP port the server listens on (e.g. "8080").
-	AppEnv                    string // Application environment (e.g. "development", "production").
-	DatabaseURL               string // PostgreSQL connection string.
-	ClerkSecretKey            string // Clerk backend API secret key.
-	ClerkWebhookSigningSecret string // Svix signing secret for Clerk webhooks.
-	OpenAIAPIKey              string // OpenAI API key used by voice call providers.
-	ElevenLabsAPIKey          string // ElevenLabs API key used by voice call providers.
+	Port                      string   // HTTP port the server listens on (e.g. "8080").
+	AppEnv                    string   // Application environment (e.g. "development", "production").
+	DatabaseURL               string   // PostgreSQL connection string.
+	ClerkSecretKey            string   // Clerk backend API secret key.
+	ClerkWebhookSigningSecret string   // Svix signing secret for Clerk webhooks.
+	OpenAIAPIKey              string   // OpenAI API key used by voice call providers.
+	ElevenLabsAPIKey          string   // ElevenLabs API key used by voice call providers.
+	CORSAllowedOrigins        []string // Browser origins allowed to call the API (comma-separated CORS_ALLOWED_ORIGINS); empty means https://wapzen.io.
 
 	// Knowledge base indexing. The embedding model and the Pinecone index must
 	// agree on a vector width, so one dimension drives both: it is requested from
@@ -56,6 +57,7 @@ func Load() *Config {
 		ClerkWebhookSigningSecret: getEnv("CLERK_WEBHOOK_SIGNING_SECRET", ""),
 		OpenAIAPIKey:              openAIAPIKey,
 		ElevenLabsAPIKey:          getEnv("ELEVENLABS_API_KEY", ""),
+		CORSAllowedOrigins:        getEnvList("CORS_ALLOWED_ORIGINS"),
 		OpenAIEmbeddingModel:      getEnv("OPENAI_EMBEDDING_MODEL", embeddings.DefaultModel),
 		PineconeAPIKey:            strings.TrimSpace(getEnv("PINECONE_API_KEY", "")),
 		PineconeIndexName:         getEnv("PINECONE_INDEX_NAME", ""),
@@ -71,6 +73,18 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// getEnvList splits a comma-separated environment variable into its trimmed,
+// non-empty entries, returning nil when the variable is unset or empty.
+func getEnvList(key string) []string {
+	var values []string
+	for _, value := range strings.Split(os.Getenv(key), ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func getEnvInt(key string, fallback int) int {

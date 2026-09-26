@@ -145,6 +145,7 @@ func main() {
 		WhatsAppLoginManager:      whatsAppLoginManager,
 		ClerkWebhookSigningSecret: cfg.ClerkWebhookSigningSecret,
 		ElevenLabsAPIKey:          cfg.ElevenLabsAPIKey,
+		CORSAllowedOrigins:        cfg.CORSAllowedOrigins,
 	})
 
 	addr := ":" + cfg.Port

@@ -232,3 +232,27 @@ func TestChatSendTextUsesConfiguredBody(t *testing.T) {
 		t.Errorf("result = %q, want the send reported to the model", result)
 	}
 }
+
+func TestTuneAnthropicPayload(t *testing.T) {
+	for _, tc := range []struct {
+		model        string
+		wantTemp     bool
+		wantThinking bool
+	}{
+		{"claude-opus-5", false, true},
+		{"claude-sonnet-5", false, true},
+		{"claude-fable-5-1", false, true},
+		{"claude-opus-4-8", false, false},
+		{"claude-sonnet-4-6", true, false},
+		{"claude-haiku-4-5-20251001", true, false},
+	} {
+		payload := map[string]any{"max_tokens": chatResponseMaxTok}
+		tuneAnthropicPayload(payload, tc.model, 0.3)
+		if _, ok := payload["temperature"]; ok != tc.wantTemp {
+			t.Errorf("%s: temperature sent = %v, want %v", tc.model, ok, tc.wantTemp)
+		}
+		if _, ok := payload["output_config"]; ok != tc.wantThinking {
+			t.Errorf("%s: output_config sent = %v, want %v", tc.model, ok, tc.wantThinking)
+		}
+	}
+}

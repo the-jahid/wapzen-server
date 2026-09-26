@@ -205,8 +205,8 @@ func agentSectionSchema(requireName bool) oas.Object {
 
 func modelSectionSchema() oas.Object {
 	return oas.Obj().Desc("Conversational model settings.").
-		P("provider", oas.Str().Enum([]string{"openai", "anthropic"}).Default("openai").Example("openai")).
-		P("name", oas.Str().Default("gpt-4.1-mini").Example("gpt-4.1-mini")).
+		P("provider", oas.Str().Enum([]string{"openai", "anthropic"}).Default("anthropic").Example("anthropic")).
+		P("name", oas.Str().Default("claude-sonnet-5").Example("claude-sonnet-5")).
 		P("temperature", oas.Num().Min(0.1).Max(1).Default(0.3).Example(0.3)).
 		Build()
 }
@@ -304,7 +304,7 @@ func resourceExample() oas.Object {
 			"phone_number_id": "phone_number_12345",
 			"status":          "inactive",
 		},
-		"model": oas.Object{"provider": "openai", "name": "gpt-4.1-mini", "temperature": 0.3},
+		"model": oas.Object{"provider": "anthropic", "name": "claude-sonnet-5", "temperature": 0.3},
 		"prompt": oas.Object{
 			"system_prompt": "You are a helpful WhatsApp support assistant.",
 		},

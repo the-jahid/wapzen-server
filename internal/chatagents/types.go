@@ -13,8 +13,8 @@ var ErrPhoneNumberRequired = errors.New("assign a phone number before activating
 
 const (
 	DefaultStatus       = "inactive"
-	DefaultProvider     = "openai"
-	DefaultModel        = "gpt-4.1-mini"
+	DefaultProvider     = "anthropic"
+	DefaultModel        = "claude-sonnet-5"
 	DefaultTemperature  = 0.3
 	DefaultSystemPrompt = "You are a helpful, friendly WhatsApp chat assistant."
 )

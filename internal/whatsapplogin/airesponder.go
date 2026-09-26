@@ -20,6 +20,7 @@ const (
 	openAIResponsesURL   = "https://api.openai.com/v1/responses"
 	anthropicMessagesURL = "https://api.anthropic.com/v1/messages"
 	chatResponseMaxTok   = 500
+	chatThinkingMaxTok   = 4000
 	aiMaxAttempts        = 3
 	aiRetryDelay         = 800 * time.Millisecond
 
@@ -168,8 +169,9 @@ func (r *aiResponder) replyAnthropic(ctx context.Context, agent chatagents.LiveA
 	for round := 0; ; round++ {
 		payload := map[string]any{
 			"model": agent.ModelName, "system": instructions, "messages": input,
-			"temperature": agent.ModelTemperature, "max_tokens": chatResponseMaxTok,
+			"max_tokens": chatResponseMaxTok,
 		}
+		tuneAnthropicPayload(payload, agent.ModelName, agent.ModelTemperature)
 		attachAnthropicTools(payload, tools, round >= chatMaxToolRounds)
 
 		body, err := r.post(ctx, "anthropic", r.anthropicEndpoint, r.anthropicKey, payload)
@@ -201,6 +203,36 @@ func (r *aiResponder) replyAnthropic(ctx context.Context, agent chatagents.LiveA
 		)
 	}
 	return strings.Join(parts, "\n\n"), nil
+}
+
+// tuneAnthropicPayload fits the sampling and thinking settings to the model.
+// Opus 4.7+, Sonnet 5 and Fable reject temperature with a 400, so it is only
+// sent to models that still take it. The 5-series models also think by
+// default, and thinking tokens count against max_tokens: they get low effort,
+// which suits short chat replies, and room above the reply cap so the thinking
+// cannot crowd out the answer.
+func tuneAnthropicPayload(payload map[string]any, model string, temperature float64) {
+	if !anthropicRejectsSampling(model) {
+		payload["temperature"] = temperature
+	}
+	if anthropicThinksByDefault(model) {
+		payload["output_config"] = map[string]any{"effort": "low"}
+		payload["max_tokens"] = chatThinkingMaxTok
+	}
+}
+
+func anthropicRejectsSampling(model string) bool {
+	return anthropicThinksByDefault(model) ||
+		strings.HasPrefix(model, "claude-opus-4-7") || strings.HasPrefix(model, "claude-opus-4-8")
+}
+
+func anthropicThinksByDefault(model string) bool {
+	for _, prefix := range []string{"claude-fable-", "claude-mythos-", "claude-opus-5", "claude-sonnet-5"} {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // attachOpenAITools declares the available tools on a Responses request. When
