@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"whatsapp-ai-caller-server/internal/chatagents"
@@ -165,16 +166,13 @@ func (r *aiResponder) replyAnthropic(ctx context.Context, agent chatagents.LiveA
 		input = append(input, message)
 	}
 
+	model := strings.TrimSpace(agent.ModelName)
 	var parts []string
 	for round := 0; ; round++ {
-		payload := map[string]any{
-			"model": agent.ModelName, "system": instructions, "messages": input,
-			"max_tokens": chatResponseMaxTok,
-		}
-		tuneAnthropicPayload(payload, agent.ModelName, agent.ModelTemperature)
+		payload := map[string]any{"system": instructions, "messages": input}
 		attachAnthropicTools(payload, tools, round >= chatMaxToolRounds)
 
-		body, err := r.post(ctx, "anthropic", r.anthropicEndpoint, r.anthropicKey, payload)
+		body, err := r.postAnthropic(ctx, &model, agent.ModelTemperature, payload)
 		if err != nil {
 			return "", err
 		}
@@ -203,6 +201,59 @@ func (r *aiResponder) replyAnthropic(ctx context.Context, agent chatagents.LiveA
 		)
 	}
 	return strings.Join(parts, "\n\n"), nil
+}
+
+// anthropicFallbackModel answers for an agent whose saved model Anthropic has
+// retired. Agents keep the model they were saved with, so without it a
+// retirement silently stops every reply those agents would have sent.
+const anthropicFallbackModel = "claude-sonnet-5"
+
+var (
+	// anthropicNoTemperature holds the models that refused temperature, so only
+	// the first reply after a restart pays for the rejected request.
+	anthropicNoTemperature sync.Map
+	// anthropicRetired holds the models that answered not_found.
+	anthropicRetired sync.Map
+)
+
+// postAnthropic sends one Messages request for *model, recovering from the two
+// ways a saved model setting goes stale: a model that no longer takes
+// temperature is retried without it, and a retired model is swapped for
+// anthropicFallbackModel. *model is updated in place so a reply's later tool
+// rounds go straight to the model that worked. Each recovery removes its own
+// cause, so the loop ends.
+func (r *aiResponder) postAnthropic(ctx context.Context, model *string, temperature float64, payload map[string]any) ([]byte, error) {
+	for {
+		if _, retired := anthropicRetired.Load(*model); retired && *model != anthropicFallbackModel {
+			*model = anthropicFallbackModel
+		}
+		payload["model"] = *model
+		payload["max_tokens"] = chatResponseMaxTok
+		delete(payload, "temperature")
+		delete(payload, "output_config")
+		tuneAnthropicPayload(payload, *model, temperature)
+		if _, refused := anthropicNoTemperature.Load(*model); refused {
+			delete(payload, "temperature")
+		}
+
+		body, err := r.post(ctx, "anthropic", r.anthropicEndpoint, r.anthropicKey, payload)
+		var status *providerStatusError
+		if err == nil || !errors.As(err, &status) {
+			return body, err
+		}
+		_, sentTemperature := payload["temperature"]
+		switch {
+		case status.Code == http.StatusBadRequest && sentTemperature && strings.Contains(status.Body, "temperature"):
+			log.Printf("whatsapp chat agent: anthropic model %s refused temperature, retrying without it", *model)
+			anthropicNoTemperature.Store(*model, struct{}{})
+		case status.Code == http.StatusNotFound && *model != anthropicFallbackModel &&
+			strings.Contains(status.Body, "not_found_error") && strings.Contains(status.Body, "model"):
+			log.Printf("whatsapp chat agent: anthropic model %s is not available, answering with %s instead", *model, anthropicFallbackModel)
+			anthropicRetired.Store(*model, struct{}{})
+		default:
+			return nil, err
+		}
+	}
 }
 
 // tuneAnthropicPayload fits the sampling and thinking settings to the model.
@@ -334,10 +385,25 @@ func (r *aiResponder) attempt(ctx context.Context, provider, endpoint, key strin
 		return nil, true, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode >= 500 || resp.StatusCode == 429,
-			fmt.Errorf("%s status %s: %s", provider, resp.Status, strings.TrimSpace(string(responseBody)))
+		return nil, resp.StatusCode >= 500 || resp.StatusCode == 429, &providerStatusError{
+			Provider: provider, Status: resp.Status, Code: resp.StatusCode,
+			Body: strings.TrimSpace(string(responseBody)),
+		}
 	}
 	return responseBody, false, nil
+}
+
+// providerStatusError is a non-2xx answer from a model provider, kept typed so
+// a caller can tell a rejected setting from any other failure.
+type providerStatusError struct {
+	Provider string
+	Status   string
+	Code     int
+	Body     string
+}
+
+func (e *providerStatusError) Error() string {
+	return fmt.Sprintf("%s status %s: %s", e.Provider, e.Status, e.Body)
 }
 
 // openAIToolCall is one function call the model emitted, kept alongside the raw

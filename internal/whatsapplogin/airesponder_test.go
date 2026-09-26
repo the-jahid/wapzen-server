@@ -256,3 +256,66 @@ func TestTuneAnthropicPayload(t *testing.T) {
 		}
 	}
 }
+
+// TestReplyAnthropicRecoversFromStaleModelSettings pins that a saved model the
+// API no longer serves as configured still gets an answer: temperature is
+// dropped when refused, and a retired model falls back to a current one.
+func TestReplyAnthropicRecoversFromStaleModelSettings(t *testing.T) {
+	var models []string
+	var temperatures []bool
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		model, _ := payload["model"].(string)
+		_, sentTemperature := payload["temperature"]
+		models = append(models, model)
+		temperatures = append(temperatures, sentTemperature)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case model == "claude-retired-1":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"not_found_error","message":"model: claude-retired-1"}}`)
+		case model == "claude-strict-1" && sentTemperature:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"`temperature` is deprecated for this model.\"}}")
+		default:
+			_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"Hello."}]}`)
+		}
+	}))
+	defer modelServer.Close()
+
+	responder := &aiResponder{
+		anthropicKey:      "test-key",
+		anthropicEndpoint: modelServer.URL,
+		httpClient:        &http.Client{Timeout: 10 * time.Second},
+	}
+	for _, tc := range []struct {
+		model      string
+		wantModels []string
+		wantTemps  []bool
+	}{
+		{"claude-strict-1", []string{"claude-strict-1", "claude-strict-1"}, []bool{true, false}},
+		// Remembered: the next reply skips the refused temperature outright.
+		{"claude-strict-1", []string{"claude-strict-1"}, []bool{false}},
+		{"claude-retired-1", []string{"claude-retired-1", anthropicFallbackModel}, []bool{true, false}},
+		{"claude-retired-1", []string{anthropicFallbackModel}, []bool{false}},
+	} {
+		models, temperatures = nil, nil
+		reply, err := responder.Reply(context.Background(), chatagents.LiveAgent{
+			ID: "chat_agent_1", ModelProvider: "anthropic", ModelName: tc.model, ModelTemperature: 0.3, SystemPrompt: "You are helpful.",
+		}, []aiMessage{{Role: "user", Content: "hello"}}, nil)
+		if err != nil || reply != "Hello." {
+			t.Fatalf("%s: Reply = %q, %v; want Hello.", tc.model, reply, err)
+		}
+		if strings.Join(models, ",") != strings.Join(tc.wantModels, ",") {
+			t.Errorf("%s: requested models %v, want %v", tc.model, models, tc.wantModels)
+		}
+		for i := range temperatures {
+			if i < len(tc.wantTemps) && temperatures[i] != tc.wantTemps[i] {
+				t.Errorf("%s: request %d sent temperature = %v, want %v", tc.model, i, temperatures[i], tc.wantTemps[i])
+			}
+		}
+	}
+}
