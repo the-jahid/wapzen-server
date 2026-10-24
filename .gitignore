@@ -12,3 +12,6 @@ callrec/
 
 # Editor/tooling temp files
 *.tmp.*
+
+# Render build output
+/app

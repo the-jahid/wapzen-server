@@ -3,12 +3,14 @@
 services:
   - type: web
     name: wapzen-server
-    runtime: docker
+    runtime: go
     # Singapore sits next to the Supabase database (ap-southeast-1).
     region: singapore
     # Not the free plan: it sleeps after 15 idle minutes, which drops every
     # paired WhatsApp number until the next request wakes it.
     plan: starter
+    buildCommand: go build -trimpath -ldflags="-s -w" -o app ./cmd/api
+    startCommand: ./app
     healthCheckPath: /health
     autoDeploy: true
     envVars:
