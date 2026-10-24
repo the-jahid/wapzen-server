@@ -147,8 +147,12 @@ func (h *ChatAgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: err.Error()})
 		return
 	}
+	if req.Agent != nil && req.Agent.PhoneNumberID.Set {
+		log.Printf("chat agent [debug]: update chat_agent_id=%s user_id=%s phone_number_id=%v", id, user.ID, optionalForLog(req.Agent.PhoneNumberID.Value))
+	}
 	resource, err := h.repo.Update(r.Context(), user.ID, id, req)
 	if err != nil {
+		log.Printf("chat agent [debug]: update failed chat_agent_id=%s user_id=%s: %v", id, user.ID, err)
 		h.writeError(w, err, "failed to update chat agent")
 		return
 	}
@@ -250,4 +254,12 @@ func parseChatPagination(r *http.Request) (int, int, error) {
 		limit = value
 	}
 	return page, limit, nil
+}
+
+// optionalForLog renders a nullable id for the debug log: "null" when it clears.
+func optionalForLog(value *string) string {
+	if value == nil {
+		return "null"
+	}
+	return *value
 }

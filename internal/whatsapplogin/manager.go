@@ -892,11 +892,13 @@ func (m *Manager) markSessionFailed(session *loginSession) {
 // row (a relink, a resume) just updates it.
 func (m *Manager) markSessionConnected(session *loginSession, waJID string, phoneNumber *string) error {
 	if !session.draft.pending() {
+		log.Printf("whatsapp login [debug]: updating existing row to connected phone_number_id=%s user_id=%s wa_jid=%s", session.phoneNumberID, session.userID, waJID)
 		_, err := m.repo.MarkConnected(context.Background(), session.userID, session.phoneNumberID, waJID, phoneNumber)
 		return err
 	}
 
 	pending := session.draft.snapshot()
+	log.Printf("whatsapp login [debug]: inserting phone_numbers row phone_number_id=%s user_id=%s wa_jid=%s", pending.ID, session.userID, waJID)
 	row, err := m.repo.CreatePaired(
 		context.Background(),
 		pending.ID,
@@ -1428,7 +1430,7 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 			}
 			session.signalFirstQR()
 		case "success":
-			log.Printf("whatsapp login: QR pairing succeeded phone_number_id=%s", session.phoneNumberID)
+			log.Printf("whatsapp login: QR pairing succeeded phone_number_id=%s draft_pending=%t", session.phoneNumberID, session.draft.pending())
 			// Connected will follow after the post-pairing reconnect.
 		case "timeout":
 			log.Printf("whatsapp login: QR session expired phone_number_id=%s", session.phoneNumberID)
@@ -1471,7 +1473,10 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 		m.handleIncomingMessage(session, v)
 	case *events.Connected:
 		waJID := clientJID(session.client)
+		log.Printf("whatsapp login [debug]: Connected event phone_number_id=%s wa_jid=%q logged_in=%t draft_pending=%t assign_agent_id=%q",
+			session.phoneNumberID, waJID, session.client.IsLoggedIn(), session.draft.pending(), session.assignAgentID)
 		if waJID == "" || !session.client.IsLoggedIn() {
+			log.Printf("whatsapp login [debug]: Connected ignored (no JID or not logged in); phone number NOT saved phone_number_id=%s", session.phoneNumberID)
 			return
 		}
 		session.setConnected()
