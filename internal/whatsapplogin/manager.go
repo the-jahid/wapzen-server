@@ -236,6 +236,11 @@ type loginSession struct {
 	// every resumed session.
 	draft *draftLogin
 
+	// persistMu serializes markSessionConnected, which runs from both PairSuccess
+	// and the Connected that follows it on separate goroutines; without it both
+	// can see the draft pending and insert the row twice.
+	persistMu sync.Mutex
+
 	firstQR     chan struct{}
 	firstQROnce sync.Once
 	done        chan struct{}
@@ -891,6 +896,9 @@ func (m *Manager) markSessionFailed(session *loginSession) {
 // login has been served as since its first QR code. A login that already had a
 // row (a relink, a resume) just updates it.
 func (m *Manager) markSessionConnected(session *loginSession, waJID string, phoneNumber *string) error {
+	session.persistMu.Lock()
+	defer session.persistMu.Unlock()
+
 	if !session.draft.pending() {
 		log.Printf("whatsapp login [debug]: updating existing row to connected phone_number_id=%s user_id=%s wa_jid=%s", session.phoneNumberID, session.userID, waJID)
 		_, err := m.repo.MarkConnected(context.Background(), session.userID, session.phoneNumberID, waJID, phoneNumber)
@@ -1471,6 +1479,21 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 	switch v := evt.(type) {
 	case *events.Message:
 		m.handleIncomingMessage(session, v)
+	case *events.PairSuccess:
+		// whatsmeow has already saved the device by the time this fires, so the
+		// phone shows it linked. Record the number now rather than waiting for
+		// the Connected that follows the post-pairing reconnect: a restart or a
+		// failed reconnect in between would otherwise leave a linked device with
+		// no phone_numbers row and the page stuck on its QR code.
+		log.Printf("whatsapp login: pair success phone_number_id=%s wa_jid=%s", session.phoneNumberID, v.ID.String())
+		if err := m.markSessionConnected(session, v.ID.String(), phoneNumberFromJID(v.ID)); err != nil {
+			log.Printf("whatsapp login: record paired number failed for phone_number_id=%s: %v", session.phoneNumberID, err)
+			if session.draft.pending() {
+				_ = m.markSessionDropped(session)
+			}
+			return
+		}
+		go m.ensureConnectedAfterPair(session)
 	case *events.Connected:
 		waJID := clientJID(session.client)
 		log.Printf("whatsapp login [debug]: Connected event phone_number_id=%s wa_jid=%q logged_in=%t draft_pending=%t assign_agent_id=%q",
@@ -1544,6 +1567,31 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 		m.markLifecycleFailure(session, v.Message)
 	case *events.TemporaryBan:
 		m.markLifecycleFailure(session, v.String())
+	}
+}
+
+// pairReconnectWait is how long a fresh pairing gets to come back on its own —
+// whatsmeow reconnects after WhatsApp's post-pairing 515 — before it is
+// reconnected here.
+const pairReconnectWait = 20 * time.Second
+
+// ensureConnectedAfterPair reconnects a just-paired session whose post-pairing
+// reconnect never produced a Connected. whatsmeow makes that reconnect exactly
+// once and gives up on an error, which leaves the device linked on the phone
+// with nothing listening for its messages.
+func (m *Manager) ensureConnectedAfterPair(session *loginSession) {
+	select {
+	case <-time.After(pairReconnectWait):
+	case <-session.done:
+		return
+	}
+	if session.isConnected() || session.isClosing() {
+		return
+	}
+	log.Printf("whatsapp login: no Connected %s after pairing; reconnecting phone_number_id=%s", pairReconnectWait, session.phoneNumberID)
+	session.client.Disconnect()
+	if err := session.client.Connect(); err != nil {
+		log.Printf("whatsapp login: reconnect after pairing failed phone_number_id=%s: %v", session.phoneNumberID, err)
 	}
 }
 
