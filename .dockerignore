@@ -1,0 +1,7 @@
+.env
+.git
+.air.toml
+tmp/
+callrec/
+*.exe
+*.log

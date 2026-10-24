@@ -1,0 +1,40 @@
+# Render Blueprint: New > Blueprint, pick this repo. Secrets marked
+# `sync: false` are asked for once in the dashboard and never stored here.
+services:
+  - type: web
+    name: wapzen-server
+    runtime: docker
+    # Singapore sits next to the Supabase database (ap-southeast-1).
+    region: singapore
+    # Not the free plan: it sleeps after 15 idle minutes, which drops every
+    # paired WhatsApp number until the next request wakes it.
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://wapzen.io
+      - key: DATABASE_URL
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_WEBHOOK_SIGNING_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_HOST
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        value: voice
+      - key: PINECONE_INDEX_DIMENSION
+        value: "3072"
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-large
