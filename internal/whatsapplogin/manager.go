@@ -270,6 +270,7 @@ func NewManager(ctx context.Context, databaseURL string, repo *phonenumbers.Repo
 		return nil, fmt.Errorf("database URL is required")
 	}
 	configureCompanionDeviceProps()
+	keepWAVersionCurrent(ctx)
 
 	sqlDB, err := sql.Open("pgx", normalizeDatabaseURL(databaseURL))
 	if err != nil {
