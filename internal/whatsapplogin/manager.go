@@ -2159,7 +2159,11 @@ func (m *Manager) clientFromStoredDevice(ctx context.Context, row models.PhoneNu
 }
 
 func newWhatsAppLogger(userID, phoneNumberID string) waLog.Logger {
+	// Millisecond timestamps, so a stanza can be lined up against the
+	// "whatsapp login:" lines when timing a handshake.
+	zerolog.TimeFieldFormat = "2006/01/02 15:04:05.000"
 	logger := zerolog.New(log.Writer()).Level(whatsAppLogLevel()).With().
+		Timestamp().
 		Str("component", "whatsmeow").
 		Str("user_id", userID).
 		Str("phone_number_id", phoneNumberID).
