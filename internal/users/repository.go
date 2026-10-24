@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,6 +29,7 @@ type NewUserHook func(ctx context.Context, tx pgx.Tx, userID string) error
 type Repository struct {
 	pool      *pgxpool.Pool
 	onNewUser []NewUserHook
+	cache     userCache
 }
 
 // NewRepository creates a users repository backed by pgxpool. onNewUser runs,
@@ -84,11 +86,18 @@ func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.Us
 	if err := tx.Commit(ctx); err != nil {
 		return models.User{}, fmt.Errorf("commit user upsert tx: %w", err)
 	}
+	r.cache.put(user, time.Now())
 	return user, nil
 }
 
-// GetByClerkID returns the application user for a Clerk user ID.
+// GetByClerkID returns the application user for a Clerk user ID. It is served
+// from a short-lived in-memory cache when it can be (see userCache); a user
+// that does not exist is never cached, so one created since is found at once.
 func (r *Repository) GetByClerkID(ctx context.Context, clerkID string) (models.User, error) {
+	if user, ok := r.cache.get(clerkID, time.Now()); ok {
+		return user, nil
+	}
+
 	const query = `
 		SELECT id, email, oauth_id, username, created_at, updated_at
 		FROM users
@@ -102,6 +111,7 @@ func (r *Repository) GetByClerkID(ctx context.Context, clerkID string) (models.U
 		}
 		return models.User{}, fmt.Errorf("get user by clerk id: %w", err)
 	}
+	r.cache.put(user, time.Now())
 	return user, nil
 }
 
@@ -112,6 +122,7 @@ func (r *Repository) DeleteByClerkID(ctx context.Context, clerkID string) error 
 	if _, err := r.pool.Exec(ctx, query, clerkID); err != nil {
 		return fmt.Errorf("delete user by clerk id: %w", err)
 	}
+	r.cache.drop(clerkID)
 	return nil
 }
 

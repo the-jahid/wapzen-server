@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -208,17 +209,7 @@ func (r *Repository) AppendTurn(ctx context.Context, conversationID, role, conte
 func (r *Repository) ListByUser(ctx context.Context, userID string, filter Filter, limit, offset int) ([]models.ChatConversation, int, error) {
 	where, args := filterClause(userID, filter)
 
-	var total int
 	countQuery := "SELECT count(*) FROM chat_conversations WHERE " + where
-	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count chat conversations: %w", err)
-	}
-
-	out := make([]models.ChatConversation, 0)
-	if total == 0 {
-		return out, 0, nil
-	}
-
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM chat_conversations
@@ -227,21 +218,21 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, filter Filte
 		LIMIT $%d OFFSET $%d
 	`, conversationColumns, where, len(args)+1, len(args)+2)
 
-	rows, err := r.pool.Query(ctx, query, append(args, limit, offset)...)
+	out := make([]models.ChatConversation, 0)
+	total, err := db.ListPage(ctx, r.pool,
+		countQuery, args,
+		query, append(args, limit, offset),
+		func(rows pgx.Rows) error {
+			conversation, err := scanConversation(rows)
+			if err != nil {
+				return fmt.Errorf("scan chat conversation: %w", err)
+			}
+			out = append(out, conversation)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list chat conversations: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		conversation, err := scanConversation(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan chat conversation: %w", err)
-		}
-		out = append(out, conversation)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate chat conversations: %w", err)
 	}
 	return out, total, nil
 }

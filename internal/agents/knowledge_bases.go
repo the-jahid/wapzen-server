@@ -128,36 +128,13 @@ func lockKnowledgeBases(ctx context.Context, tx pgx.Tx, userID string, ids []str
 	return owners, nil
 }
 
-// knowledgeBaseIDsForAgent reads one agent's knowledge base ids. The slice is
-// always non-nil so the resource renders [] rather than null.
-func knowledgeBaseIDsForAgent(ctx context.Context, q querier, agentID string) ([]string, error) {
-	query := fmt.Sprintf(`SELECT id FROM knowledge_bases WHERE agent_id = $1 ORDER BY %s`, knowledgeBaseOrder)
-
-	rows, err := q.Query(ctx, query, agentID)
-	if err != nil {
-		return nil, fmt.Errorf("select knowledge base attachments: %w", err)
-	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return nil, fmt.Errorf("scan knowledge base attachments: %w", err)
-	}
-	if ids == nil {
-		ids = []string{}
-	}
-	return ids, nil
-}
-
-// knowledgeBaseIDsForAgents loads the knowledge base ids of every agent in one
-// query, grouped by agent id, so listing a page of agents does not fan out into
-// one query per agent. Agents with none are absent from the result.
-func knowledgeBaseIDsForAgents(ctx context.Context, q querier, agentIDs []string) (map[string][]string, error) {
-	query := fmt.Sprintf(`
-		SELECT agent_id, id
-		FROM knowledge_bases
-		WHERE agent_id = ANY($1::text[])
-		ORDER BY agent_id, %s`, knowledgeBaseOrder)
-	return groupIDsByAgent(ctx, q, query, agentIDs, "knowledge base")
-}
+// knowledgeBaseIDsQuery selects the (agent_id, id) pairs of every knowledge base
+// attached to the agents in $1; see Repository.attachmentIDs.
+const knowledgeBaseIDsQuery = `
+	SELECT agent_id, id
+	FROM knowledge_bases
+	WHERE agent_id = ANY($1::text[])
+	ORDER BY agent_id, ` + knowledgeBaseOrder
 
 // KnowledgeBasesForAgent loads the knowledge bases an agent can answer from,
 // resolved down to their vector-store namespaces, in attachment order. It backs
@@ -200,16 +177,12 @@ func (r *Repository) KnowledgeBasesForAgent(ctx context.Context, agentID string)
 	return bases, nil
 }
 
-// groupIDsByAgent runs a query selecting (agent_id, id) pairs for the given
-// agents and groups the ids by agent. It is shared by the knowledge base and
-// tool bulk readers; subject names the attachment kind in errors.
-func groupIDsByAgent(ctx context.Context, q querier, query string, agentIDs []string, subject string) (map[string][]string, error) {
+// groupIDsByAgent reads the next result of an attachment batch — (agent_id, id)
+// pairs — and groups the ids by agent. It is shared by the knowledge base and
+// tool readers; subject names the attachment kind in errors.
+func groupIDsByAgent(results pgx.BatchResults, subject string) (map[string][]string, error) {
 	out := make(map[string][]string)
-	if len(agentIDs) == 0 {
-		return out, nil
-	}
-
-	rows, err := q.Query(ctx, query, agentIDs)
+	rows, err := results.Query()
 	if err != nil {
 		return nil, fmt.Errorf("select %s attachments: %w", subject, err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -63,6 +64,7 @@ type dbQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 // Repository owns persistence for the outbound_campaigns table.
@@ -120,17 +122,7 @@ func (r *Repository) ListByUser(ctx context.Context, userID, status string, limi
 		args = append(args, status)
 	}
 
-	var total int
 	countQuery := "SELECT count(*) FROM outbound_campaigns c WHERE " + where
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count outbound campaigns: %w", err)
-	}
-
-	out := make([]models.OutboundCampaign, 0)
-	if total == 0 {
-		return out, 0, nil
-	}
-
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM outbound_campaigns c
@@ -140,21 +132,21 @@ func (r *Repository) ListByUser(ctx context.Context, userID, status string, limi
 		LIMIT $%d OFFSET $%d
 	`, campaignColumns, campaignJoins, where, len(args)+1, len(args)+2)
 
-	rows, err := r.db.Query(ctx, query, append(args, limit, offset)...)
+	out := make([]models.OutboundCampaign, 0)
+	total, err := db.ListPage(ctx, r.db,
+		countQuery, args,
+		query, append(args, limit, offset),
+		func(rows pgx.Rows) error {
+			campaign, err := r.scanCampaign(rows)
+			if err != nil {
+				return fmt.Errorf("scan outbound campaign: %w", err)
+			}
+			out = append(out, campaign)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list outbound campaigns: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		campaign, err := r.scanCampaign(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan outbound campaign: %w", err)
-		}
-		out = append(out, campaign)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate outbound campaigns: %w", err)
 	}
 	return out, total, nil
 }

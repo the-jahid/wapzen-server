@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -164,16 +165,6 @@ func (r *Repository) MarkFailed(ctx context.Context, id, reason string) error {
 // clamp them to sane bounds. The returned slice is always non-nil so an empty
 // page serializes as [] rather than null.
 func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offset int) ([]models.Call, int, error) {
-	var total int
-	if err := r.pool.QueryRow(ctx, "SELECT count(*) FROM calls WHERE user_id = $1", userID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count calls: %w", err)
-	}
-
-	out := make([]models.Call, 0)
-	if total == 0 {
-		return out, 0, nil
-	}
-
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM calls
@@ -182,21 +173,21 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 		LIMIT $2 OFFSET $3
 	`, callColumns)
 
-	rows, err := r.pool.Query(ctx, query, userID, limit, offset)
+	out := make([]models.Call, 0)
+	total, err := db.ListPage(ctx, r.pool,
+		"SELECT count(*) FROM calls WHERE user_id = $1", []any{userID},
+		query, []any{userID, limit, offset},
+		func(rows pgx.Rows) error {
+			call, err := scanCall(rows)
+			if err != nil {
+				return fmt.Errorf("scan call: %w", err)
+			}
+			out = append(out, call)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list calls: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		call, err := scanCall(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan call: %w", err)
-		}
-		out = append(out, call)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate calls: %w", err)
 	}
 	return out, total, nil
 }
@@ -211,16 +202,6 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 func (r *Repository) ListByCampaign(ctx context.Context, userID, campaignID string, limit, offset int) ([]models.Call, int, error) {
 	const countQuery = `SELECT count(*) FROM calls WHERE user_id = $1 AND campaign_id = $2`
 
-	var total int
-	if err := r.pool.QueryRow(ctx, countQuery, userID, campaignID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count campaign calls: %w", err)
-	}
-
-	out := make([]models.Call, 0)
-	if total == 0 {
-		return out, 0, nil
-	}
-
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM calls
@@ -229,21 +210,21 @@ func (r *Repository) ListByCampaign(ctx context.Context, userID, campaignID stri
 		LIMIT $3 OFFSET $4
 	`, callColumns)
 
-	rows, err := r.pool.Query(ctx, query, userID, campaignID, limit, offset)
+	out := make([]models.Call, 0)
+	total, err := db.ListPage(ctx, r.pool,
+		countQuery, []any{userID, campaignID},
+		query, []any{userID, campaignID, limit, offset},
+		func(rows pgx.Rows) error {
+			call, err := scanCall(rows)
+			if err != nil {
+				return fmt.Errorf("scan campaign call: %w", err)
+			}
+			out = append(out, call)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list campaign calls: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		call, err := scanCall(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan campaign call: %w", err)
-		}
-		out = append(out, call)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate campaign calls: %w", err)
 	}
 	return out, total, nil
 }

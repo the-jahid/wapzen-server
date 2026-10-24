@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -52,6 +53,7 @@ type dbQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 // Repository owns persistence for the tools table.
@@ -114,16 +116,6 @@ func (r *Repository) ListByUser(ctx context.Context, userID, toolType string, li
 	}
 
 	const countQuery = `SELECT count(*) FROM tools WHERE user_id = $1 AND ($2::text IS NULL OR type = $2)`
-	var total int
-	if err := r.db.QueryRow(ctx, countQuery, userID, filter).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count tools: %w", err)
-	}
-
-	out := make([]models.Tool, 0)
-	if total == 0 {
-		return out, 0, nil
-	}
-
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM tools
@@ -132,21 +124,21 @@ func (r *Repository) ListByUser(ctx context.Context, userID, toolType string, li
 		LIMIT $3 OFFSET $4
 	`, toolColumns)
 
-	rows, err := r.db.Query(ctx, query, userID, filter, limit, offset)
+	out := make([]models.Tool, 0)
+	total, err := db.ListPage(ctx, r.db,
+		countQuery, []any{userID, filter},
+		query, []any{userID, filter, limit, offset},
+		func(rows pgx.Rows) error {
+			tool, err := scanTool(rows)
+			if err != nil {
+				return fmt.Errorf("scan tool: %w", err)
+			}
+			out = append(out, tool)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list tools: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		tool, err := scanTool(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan tool: %w", err)
-		}
-		out = append(out, tool)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate tools: %w", err)
 	}
 	if err := r.loadAttachments(ctx, out); err != nil {
 		return nil, 0, err
@@ -155,8 +147,8 @@ func (r *Repository) ListByUser(ctx context.Context, userID, toolType string, li
 }
 
 // loadAttachments fills in which agents each tool is attached to, for the whole
-// page in two queries rather than two per tool. The slices are always non-nil so
-// a tool nobody uses serializes as [] rather than null.
+// page in two queries sent as one batch, rather than two per tool. The slices
+// are always non-nil so a tool nobody uses serializes as [] rather than null.
 func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) error {
 	if len(page) == 0 {
 		return nil
@@ -170,7 +162,7 @@ func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) er
 		page[i].ChatAgentIDs = []string{}
 	}
 
-	for _, spec := range []struct {
+	specs := []struct {
 		query string
 		set   func(*models.Tool, string)
 	}{
@@ -182,8 +174,15 @@ func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) er
 			`SELECT tool_id, chat_agent_id FROM chat_agent_tools WHERE tool_id = ANY($1::text[]) ORDER BY tool_id, created_at, chat_agent_id`,
 			func(t *models.Tool, id string) { t.ChatAgentIDs = append(t.ChatAgentIDs, id) },
 		},
-	} {
-		rows, err := r.db.Query(ctx, spec.query, ids)
+	}
+	batch := &pgx.Batch{}
+	for _, spec := range specs {
+		batch.Queue(spec.query, ids)
+	}
+	results := r.db.SendBatch(ctx, batch)
+	defer results.Close()
+	for _, spec := range specs {
+		rows, err := results.Query()
 		if err != nil {
 			return fmt.Errorf("select tool attachments: %w", err)
 		}
@@ -200,7 +199,7 @@ func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) er
 			return fmt.Errorf("iterate tool attachments: %w", err)
 		}
 	}
-	return nil
+	return results.Close()
 }
 
 // withAttachments fills in one tool's attachments, the single-row form of

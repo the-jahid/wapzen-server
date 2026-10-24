@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -117,16 +118,6 @@ func (r *Repository) Create(ctx context.Context, params models.NewKnowledgeBase)
 // clamp them to sane bounds. The returned slice is always non-nil so an empty
 // page serializes as [] rather than null.
 func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offset int) ([]models.KnowledgeBase, int, error) {
-	var total int
-	if err := r.db.QueryRow(ctx, "SELECT count(*) FROM knowledge_bases WHERE user_id = $1", userID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count knowledge bases: %w", err)
-	}
-
-	out := make([]models.KnowledgeBase, 0)
-	if total == 0 {
-		return out, 0, nil
-	}
-
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM knowledge_bases
@@ -135,21 +126,23 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 		LIMIT $2 OFFSET $3
 	`, knowledgeBaseColumns)
 
-	rows, err := r.db.Query(ctx, query, userID, limit, offset)
+	out := make([]models.KnowledgeBase, 0)
+	// The count and the page go out as one batch, which the query interface
+	// cannot send; the pool can.
+	total, err := db.ListPage(ctx, r.pool,
+		"SELECT count(*) FROM knowledge_bases WHERE user_id = $1", []any{userID},
+		query, []any{userID, limit, offset},
+		func(rows pgx.Rows) error {
+			kb, err := scanKnowledgeBase(rows)
+			if err != nil {
+				return fmt.Errorf("scan knowledge base: %w", err)
+			}
+			out = append(out, kb)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list knowledge bases: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		kb, err := scanKnowledgeBase(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan knowledge base: %w", err)
-		}
-		out = append(out, kb)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate knowledge bases: %w", err)
 	}
 	return out, total, nil
 }

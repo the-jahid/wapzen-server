@@ -88,6 +88,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	// Custom CORS middleware.
 	r.Use(appmiddleware.CORS(deps.CORSAllowedOrigins))
 
+	// Compress JSON (and the Swagger UI's text assets) for clients that accept
+	// it. List responses repeat the same keys row after row, so they shrink
+	// several times over, which is most of their transfer time on a slow link.
+	r.Use(chimiddleware.Compress(5))
+
 	// Health check.
 	r.Get("/health", handlers.HealthCheck)
 

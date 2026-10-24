@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/tools"
 )
@@ -138,25 +139,22 @@ func (r *Repository) GetByID(ctx context.Context, userID, id string) (Resource, 
 }
 
 func (r *Repository) List(ctx context.Context, userID string, page, limit int) ([]Resource, int, error) {
-	var total int
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM chat_agents WHERE user_id=$1`, userID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count chat agents: %w", err)
-	}
-	rows, err := r.pool.Query(ctx, `SELECT `+chatAgentColumns+` FROM chat_agents WHERE user_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, userID, limit, (page-1)*limit)
+	resources := make([]Resource, 0)
+	total, err := db.ListPage(ctx, r.pool,
+		`SELECT count(*) FROM chat_agents WHERE user_id=$1`, []any{userID},
+		`SELECT `+chatAgentColumns+` FROM chat_agents WHERE user_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+		[]any{userID, limit, (page - 1) * limit},
+		func(rows pgx.Rows) error {
+			resource, err := scanRow(rows)
+			if err != nil {
+				return fmt.Errorf("scan chat agent: %w", err)
+			}
+			resources = append(resources, resource)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list chat agents: %w", err)
-	}
-	defer rows.Close()
-	resources := make([]Resource, 0)
-	for rows.Next() {
-		resource, err := scanRow(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan chat agent: %w", err)
-		}
-		resources = append(resources, resource)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate chat agents: %w", err)
 	}
 	if err := r.attachToMany(ctx, r.pool, resources); err != nil {
 		return nil, 0, err
@@ -498,11 +496,7 @@ func (r *Repository) withAttachments(ctx context.Context, resource Resource) (Re
 	return resources[0], nil
 }
 
-type attachmentQueryer interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-}
-
-func (r *Repository) attachToMany(ctx context.Context, q attachmentQueryer, resources []Resource) error {
+func (r *Repository) attachToMany(ctx context.Context, q db.Batcher, resources []Resource) error {
 	if len(resources) == 0 {
 		return nil
 	}
@@ -516,8 +510,9 @@ func (r *Repository) attachToMany(ctx context.Context, q attachmentQueryer, reso
 	}
 	// A knowledge base carries its chat agent on the row itself; a tool is shared
 	// and carries its attachments in a join table. Both are read for the whole
-	// page at once so listing agents does not fan out into a query per agent.
-	for _, spec := range []struct {
+	// page at once, in one batch, so listing agents costs one round trip for
+	// their attachments rather than a query per agent or per kind.
+	specs := []struct {
 		query string
 		set   func(*Resource, string)
 	}{
@@ -531,8 +526,15 @@ func (r *Repository) attachToMany(ctx context.Context, q attachmentQueryer, reso
 			`SELECT chat_agent_id,tool_id FROM chat_agent_tools WHERE chat_agent_id=ANY($1::text[]) ORDER BY chat_agent_id,created_at,tool_id`,
 			func(r *Resource, id string) { r.Tools.ToolIDs = append(r.Tools.ToolIDs, id) },
 		},
-	} {
-		rows, err := q.Query(ctx, spec.query, ids)
+	}
+	batch := &pgx.Batch{}
+	for _, spec := range specs {
+		batch.Queue(spec.query, ids)
+	}
+	results := q.SendBatch(ctx, batch)
+	defer results.Close()
+	for _, spec := range specs {
+		rows, err := results.Query()
 		if err != nil {
 			return err
 		}
@@ -550,7 +552,7 @@ func (r *Repository) attachToMany(ctx context.Context, q attachmentQueryer, reso
 			return err
 		}
 	}
-	return nil
+	return results.Close()
 }
 
 func normalizeIDs(ids []string) []string {

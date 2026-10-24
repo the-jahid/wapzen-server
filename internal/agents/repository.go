@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/swagger/modules/agents/types"
 )
 
@@ -174,45 +175,35 @@ func (r *Repository) GetByID(ctx context.Context, userID, agentID string) (types
 // Attachments are loaded in bulk for the whole page to avoid a per-agent query
 // fan-out.
 func (r *Repository) List(ctx context.Context, userID string, limit, offset int) ([]types.AgentResource, int, error) {
-	var total int
-	if err := r.pool.QueryRow(ctx, "SELECT count(*) FROM agents WHERE user_id = $1", userID).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count agents: %w", err)
+	query := fmt.Sprintf(
+		"SELECT %s FROM agents WHERE user_id = $1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
+		returningColumns,
+	)
+	var (
+		agentRows []agentRow
+		ids       []string
+	)
+	total, err := db.ListPage(ctx, r.pool,
+		"SELECT count(*) FROM agents WHERE user_id = $1", []any{userID},
+		query, []any{userID, limit, offset},
+		func(rows pgx.Rows) error {
+			var row agentRow
+			if err := scanAgentRow(rows, &row); err != nil {
+				return fmt.Errorf("scan agent: %w", err)
+			}
+			agentRows = append(agentRows, row)
+			ids = append(ids, row.ID)
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list agents: %w", err)
 	}
 	if total == 0 {
 		return nil, 0, nil
 	}
 
-	query := fmt.Sprintf(
-		"SELECT %s FROM agents WHERE user_id = $1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
-		returningColumns,
-	)
-	rows, err := r.pool.Query(ctx, query, userID, limit, offset)
-	if err != nil {
-		return nil, 0, fmt.Errorf("select agents: %w", err)
-	}
-	defer rows.Close()
-
-	var (
-		agentRows []agentRow
-		ids       []string
-	)
-	for rows.Next() {
-		var row agentRow
-		if err := scanAgentRow(rows, &row); err != nil {
-			return nil, 0, fmt.Errorf("scan agent: %w", err)
-		}
-		agentRows = append(agentRows, row)
-		ids = append(ids, row.ID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate agents: %w", err)
-	}
-
-	knowledgeBaseIDs, err := knowledgeBaseIDsForAgents(ctx, r.pool, ids)
-	if err != nil {
-		return nil, 0, err
-	}
-	toolIDs, err := toolIDsForAgents(ctx, r.pool, ids)
+	knowledgeBaseIDs, toolIDs, err := r.attachmentIDs(ctx, ids)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -345,15 +336,35 @@ func (r *Repository) Delete(ctx context.Context, userID, agentID string) error {
 
 // withAttachments loads the agent's attachment ids and assembles its resource.
 func (r *Repository) withAttachments(ctx context.Context, row agentRow) (types.AgentResource, error) {
-	knowledgeBaseIDs, err := knowledgeBaseIDsForAgent(ctx, r.pool, row.ID)
+	knowledgeBaseIDs, toolIDs, err := r.attachmentIDs(ctx, []string{row.ID})
 	if err != nil {
 		return types.AgentResource{}, err
 	}
-	toolIDs, err := toolIDsForAgent(ctx, r.pool, row.ID)
-	if err != nil {
-		return types.AgentResource{}, err
+	return buildResource(row, knowledgeBaseIDs[row.ID], toolIDs[row.ID]), nil
+}
+
+// attachmentIDs loads the knowledge base and tool ids of every agent in
+// agentIDs, grouped by agent id. Both reads go out as one batch, so a whole
+// page of agents costs one round trip for its attachments, never one per agent
+// or per kind. Agents with none are absent from the maps.
+func (r *Repository) attachmentIDs(ctx context.Context, agentIDs []string) (knowledgeBaseIDs, toolIDs map[string][]string, err error) {
+	if len(agentIDs) == 0 {
+		return map[string][]string{}, map[string][]string{}, nil
 	}
-	return buildResource(row, knowledgeBaseIDs, toolIDs), nil
+
+	batch := &pgx.Batch{}
+	batch.Queue(knowledgeBaseIDsQuery, agentIDs)
+	batch.Queue(toolIDsQuery, agentIDs)
+	results := r.pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	if knowledgeBaseIDs, err = groupIDsByAgent(results, "knowledge base"); err != nil {
+		return nil, nil, err
+	}
+	if toolIDs, err = groupIDsByAgent(results, "tool"); err != nil {
+		return nil, nil, err
+	}
+	return knowledgeBaseIDs, toolIDs, results.Close()
 }
 
 // translateWriteError turns the Postgres errors a create or update can hit into
@@ -438,10 +449,4 @@ func normalizeIDs(ids []string) []string {
 		out = append(out, trimmed)
 	}
 	return out
-}
-
-// querier is the read half of pgxpool.Pool and pgx.Tx, so the attachment
-// readers can run on either.
-type querier interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }

@@ -85,36 +85,13 @@ func verifyToolsOwned(ctx context.Context, tx pgx.Tx, userID string, ids []strin
 	return nil
 }
 
-// toolIDsForAgent reads one agent's tool ids. The slice is always non-nil so the
-// resource renders [] rather than null.
-func toolIDsForAgent(ctx context.Context, q querier, agentID string) ([]string, error) {
-	query := fmt.Sprintf(`SELECT at.tool_id FROM agent_tools at WHERE at.agent_id = $1 ORDER BY %s`, toolOrder)
-
-	rows, err := q.Query(ctx, query, agentID)
-	if err != nil {
-		return nil, fmt.Errorf("select tool attachments: %w", err)
-	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return nil, fmt.Errorf("scan tool attachments: %w", err)
-	}
-	if ids == nil {
-		ids = []string{}
-	}
-	return ids, nil
-}
-
-// toolIDsForAgents loads the tool ids of every agent in one query, grouped by
-// agent id, so listing a page of agents does not fan out into one query per
-// agent. Agents with none are absent from the result.
-func toolIDsForAgents(ctx context.Context, q querier, agentIDs []string) (map[string][]string, error) {
-	query := fmt.Sprintf(`
-		SELECT at.agent_id, at.tool_id
-		FROM agent_tools at
-		WHERE at.agent_id = ANY($1::text[])
-		ORDER BY at.agent_id, %s`, toolOrder)
-	return groupIDsByAgent(ctx, q, query, agentIDs, "tool")
-}
+// toolIDsQuery selects the (agent_id, tool_id) pairs of every tool attached to
+// the agents in $1; see Repository.attachmentIDs.
+const toolIDsQuery = `
+	SELECT at.agent_id, at.tool_id
+	FROM agent_tools at
+	WHERE at.agent_id = ANY($1::text[])
+	ORDER BY at.agent_id, ` + toolOrder
 
 // ToolsForAgent loads the tools an agent may call, resolved down to what running
 // one needs, in attachment order. It backs the live-call path: a call needs the
