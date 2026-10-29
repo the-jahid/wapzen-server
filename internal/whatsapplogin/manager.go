@@ -33,6 +33,7 @@ import (
 	"whatsapp-ai-caller-server/internal/agents"
 	"whatsapp-ai-caller-server/internal/agenttools"
 	"whatsapp-ai-caller-server/internal/chatagents"
+	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/phonenumbers"
 	"whatsapp-ai-caller-server/internal/voicecall"
@@ -293,6 +294,9 @@ func NewManager(ctx context.Context, databaseURL string, repo *phonenumbers.Repo
 	if err != nil {
 		return nil, fmt.Errorf("open whatsmeow sql store: %w", err)
 	}
+	sqlDB.SetMaxOpenConns(db.WhatsAppStoreMaxConns)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	container := sqlstore.NewWithDB(sqlDB, "postgres", nil)
 	if err := container.Upgrade(ctx); err != nil {
