@@ -198,7 +198,7 @@ func agentSectionSchema(requireName bool) oas.Object {
 		s.Req("name")
 	}
 	return s.
-		P("phone_number_id", oas.Str().Nullable().Desc("Optional one-to-one WhatsApp phone-number assignment. A chat agent can have at most one phone number, and the same phone number cannot be assigned to another chat agent.").Example("phone_number_12345")).
+		P("phone_number_id", oas.Str().Nullable().Desc("Optional one-to-one WhatsApp phone-number assignment. A chat agent can have at most one phone number, and the same phone number cannot be assigned to another chat agent. Assigning a number the agent did not already have sets its status to active unless status is sent in the same request.").Example("phone_number_12345")).
 		P("status", oas.Str().Enum([]string{"active", "inactive"}).Default("inactive").Example("inactive")).
 		Build()
 }

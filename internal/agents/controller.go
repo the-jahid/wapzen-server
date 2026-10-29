@@ -181,7 +181,7 @@ func (c *Controller) Get(w http.ResponseWriter, r *http.Request) {
 //
 // Update godoc
 // @Summary      Update Agent
-// @Description  Applies a partial update to an outbound agent owned by the authenticated user. Only the supplied fields are changed; absent fields keep their stored value. Assigning agent.phone_number_id is rejected with 409 when another agent already uses that phone number. Sending knowledge_base.knowledge_base_ids replaces the agent's knowledge base attachments wholesale; omitting it leaves them untouched.
+// @Description  Applies a partial update to an outbound agent owned by the authenticated user. Only the supplied fields are changed; absent fields keep their stored value. Assigning agent.phone_number_id is rejected with 409 when another agent already uses that phone number. Assigning a number the agent did not already have also sets its status to active, unless agent.status is sent in the same request. Sending knowledge_base.knowledge_base_ids replaces the agent's knowledge base attachments wholesale; omitting it leaves them untouched.
 // @Tags         agents
 // @Accept       json
 // @Produce      json

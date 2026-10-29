@@ -66,6 +66,11 @@ var ErrAgentNotFound = errors.New("agent not found")
 // or is missing its country code. It wraps WhatsApp's own error.
 var ErrPairingCodeRejected = errors.New("WhatsApp could not create a pairing code for this number")
 
+// ErrPairingCodeRateLimited is returned when WhatsApp refuses a pairing code
+// because too many were asked for the number in a short time (its 429
+// rate-overlimit). The number is fine; asking again only extends the wait.
+var ErrPairingCodeRateLimited = errors.New("WhatsApp is limiting pairing codes for this number")
+
 // pairingCodeClientName is the device name WhatsApp shows in the "Enter code
 // to link new device" prompt. WhatsApp accepts only "Browser (OS)" pairs it
 // knows, and this is the one whatsmeow's own clients use.
@@ -154,6 +159,7 @@ type phoneNumberRepository interface {
 	ResetPendingLogin(context.Context, string, string) (models.PhoneNumber, error)
 	ResetForRePair(context.Context, string, string) (models.PhoneNumber, error)
 	DeleteByUser(context.Context, string, string) (models.PhoneNumber, error)
+	DeleteByUserDevice(context.Context, string, string, string) (models.PhoneNumber, error)
 }
 
 // draftLogin is a QR login that has not paired a device yet. An offered QR code
@@ -306,6 +312,10 @@ type loginSession struct {
 	mu        sync.Mutex
 	connected bool
 	closing   bool
+	// deviceJID is the device this session runs, kept here because whatsmeow
+	// clears client.Store.ID as it reports a LoggedOut — the one moment the
+	// session needs it, to delete only a row that still names this device.
+	deviceJID string
 	// callClient is the meowcaller client attached to this session, retained so
 	// it outlives attachInbound and is not garbage-collected. It is written after
 	// the session is already published in the sessions map and read by
@@ -453,8 +463,16 @@ func (m *Manager) resumeSession(ctx context.Context, row models.PhoneNumber) err
 		// a new QR scan. This is also the recovery path when WhatsApp removed the
 		// device while the application was offline (or the live LoggedOut cleanup
 		// was interrupted), so remove the orphaned application row as well.
+		// Only while the row still names the device that is missing: a relink in
+		// the other instance of a deploy may have just moved it to a new one.
 		log.Printf("whatsapp login: resumable row has no stored device; deleting phone_number_id=%s", row.ID)
-		if _, deleteErr := m.repo.DeleteByUser(context.Background(), row.UserID, row.ID); deleteErr != nil && !errors.Is(deleteErr, phonenumbers.ErrNotFound) {
+		var deleteErr error
+		if row.WAJID != nil && strings.TrimSpace(*row.WAJID) != "" {
+			_, deleteErr = m.repo.DeleteByUserDevice(context.Background(), row.UserID, row.ID, strings.TrimSpace(*row.WAJID))
+		} else {
+			_, deleteErr = m.repo.DeleteByUser(context.Background(), row.UserID, row.ID)
+		}
+		if deleteErr != nil && !errors.Is(deleteErr, phonenumbers.ErrNotFound) {
 			return fmt.Errorf("delete phone number with missing WhatsApp device: %w", deleteErr)
 		}
 		return nil
@@ -469,6 +487,7 @@ func (m *Manager) resumeSession(ctx context.Context, row models.PhoneNumber) err
 		cancel:        cancel,
 		firstQR:       make(chan struct{}),
 		done:          make(chan struct{}),
+		deviceJID:     clientJID(client),
 	}
 	session.handlerID = client.AddEventHandler(func(evt any) {
 		m.handleEvent(session, evt)
@@ -591,10 +610,14 @@ func (m *Manager) StartPhoneLogin(ctx context.Context, userID, phoneNumber strin
 	code, err := session.client.PairPhone(ctx, phoneNumber, true, whatsmeow.PairClientChrome, pairingCodeClientName)
 	if err != nil {
 		log.Printf("whatsapp login: pairing code request failed phone_number_id=%s: %v", row.ID, err)
-		session.logScanFailed("WhatsApp would not issue a pairing code: " + err.Error())
+		rejected := ErrPairingCodeRejected
+		if errors.Is(err, whatsmeow.ErrIQRateOverLimit) {
+			rejected = ErrPairingCodeRateLimited
+		}
+		session.logScanFailed(rejected.Error() + ": " + err.Error())
 		_ = m.markSessionDropped(session)
 		m.finishSession(session, true)
-		return draft.snapshot(), fmt.Errorf("%w: %v", ErrPairingCodeRejected, err)
+		return draft.snapshot(), fmt.Errorf("%w: %v", rejected, err)
 	}
 	// whatsmeow hands the code back as "ABCD-EFGH", the way the phone shows it.
 	draft.setPairingCode(code)
@@ -1705,6 +1728,7 @@ func qrTimeoutReason(byCode bool, lasted time.Duration) string {
 // otherwise leave a linked device with no phone_numbers row and the page stuck
 // on its QR code.
 func (m *Manager) recordPairing(session *loginSession, jid types.JID) {
+	session.rememberDevice(jid.String())
 	session.pairOnce.Do(func() {
 		err := m.markSessionConnected(session, jid.String(), phoneNumberFromJID(jid))
 		duplicate := isUniqueViolation(err) && session.draft.pending()
@@ -1765,6 +1789,7 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 			return
 		}
 		session.setConnected()
+		session.rememberDevice(waJID)
 		// A restored companion connection needs to announce itself as active.
 		// Besides presence, whatsmeow uses this to refresh the unified-session
 		// marker that the primary phone and WhatsApp services use for active web
@@ -1861,17 +1886,41 @@ func (m *Manager) ensureConnectedAfterPair(session *loginSession) {
 }
 
 // deleteLoggedOutPhoneNumber removes only the application row owned by this
-// session's user. Foreign keys clear the number assignment from agents and call
-// history, while whatsmeow independently cascades deletion of the device's
-// authentication/session records from its own tables.
+// session's user, and only while that row still names this session's device.
+// A relink repoints the row to a new device and then unlinks the old one; when
+// the old device's session runs in the other instance of a deploy, its
+// LoggedOut lands here after the repoint, and deleting by id alone threw the
+// freshly relinked number away. Foreign keys clear the number assignment from
+// agents and call history, while whatsmeow independently cascades deletion of
+// the device's authentication/session records from its own tables.
 func (m *Manager) deleteLoggedOutPhoneNumber(session *loginSession) error {
-	_, err := m.repo.DeleteByUser(context.Background(), session.userID, session.phoneNumberID)
+	device := session.device()
+	if device == "" {
+		return nil // never paired, so it has no row
+	}
+	row, err := m.repo.DeleteByUserDevice(context.Background(), session.userID, session.phoneNumberID, device)
 	if errors.Is(err, phonenumbers.ErrNotFound) {
-		err = nil // idempotent if another cleanup path already removed it
+		return nil // already removed, or moved on to a newer device
 	}
 	if err != nil {
 		return err
 	}
+
+	number := device
+	if row.PhoneNumber != nil {
+		number = *row.PhoneNumber
+	}
+	who := session.email
+	if who == "" {
+		who = "user " + session.userID
+	}
+	activity.Log(activity.Entry{
+		UserID:  session.userID,
+		Email:   session.email,
+		Event:   activity.NumberUnlinked,
+		Message: fmt.Sprintf("Number removed: WhatsApp unlinked %s for %s", number, who),
+		Detail:  number,
+	})
 
 	// Conversation history is process memory rather than Postgres, but it is
 	// number-specific state and should disappear with the number too.
@@ -2611,6 +2660,21 @@ func (s *loginSession) isConnected() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.connected
+}
+
+func (s *loginSession) rememberDevice(jid string) {
+	if jid == "" {
+		return
+	}
+	s.mu.Lock()
+	s.deviceJID = jid
+	s.mu.Unlock()
+}
+
+func (s *loginSession) device() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deviceJID
 }
 
 func (s *loginSession) setCallClient(client *meowcaller.Client) {

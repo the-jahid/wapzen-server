@@ -26,6 +26,9 @@ const (
 	QRScanWorked    Event = "qr_scan_worked"
 	QRScanFailed    Event = "qr_scan_failed"
 	QRScanCancelled Event = "qr_scan_cancelled"
+	// NumberUnlinked is a linked number removed because WhatsApp logged its
+	// device out (unlinked on the phone, or replaced by a newer scan).
+	NumberUnlinked Event = "number_unlinked"
 )
 
 // Entry is one thing a user did. Message is the line printed to the log;

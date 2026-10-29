@@ -310,6 +310,28 @@ func (r *Repository) DeleteByUser(ctx context.Context, userID, phoneNumberID str
 	return row, nil
 }
 
+// DeleteByUserDevice removes the row only while it still names waJID. A
+// device going away must not take the number with it once the row has moved
+// on to a newer device: a relink repoints it, and on a deploy the device's
+// logout can reach the other instance after that. ErrNotFound when the row
+// is gone or names another device.
+func (r *Repository) DeleteByUserDevice(ctx context.Context, userID, phoneNumberID, waJID string) (models.PhoneNumber, error) {
+	query := fmt.Sprintf(`
+		DELETE FROM phone_numbers
+		WHERE id = $1 AND user_id = $2 AND wa_jid = $3
+		RETURNING %s
+	`, returningColumns)
+
+	row, err := scanPhoneNumber(r.db.QueryRow(ctx, query, phoneNumberID, userID, waJID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.PhoneNumber{}, ErrNotFound
+		}
+		return models.PhoneNumber{}, fmt.Errorf("delete phone number for device: %w", err)
+	}
+	return row, nil
+}
+
 func (r *Repository) markStatus(ctx context.Context, userID, phoneNumberID, status string) (models.PhoneNumber, error) {
 	const query = `
 		UPDATE phone_numbers

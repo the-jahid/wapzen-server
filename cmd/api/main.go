@@ -69,6 +69,7 @@ func main() {
 	if !cfg.VerboseLogs {
 		log.SetOutput(io.Discard)
 	}
+	routeSignalLogs()
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -83,7 +84,16 @@ func main() {
 	}
 
 	// Save each activity line under its user too (the activity_logs table).
-	activity.UseStore(activity.NewRepository(pool))
+	activityRepo := activity.NewRepository(pool)
+	activity.UseStore(activityRepo)
+
+	// QR logins the last instance was running when it stopped never got an
+	// outcome; close them out. 15 minutes is well past any live login's ~3.
+	if settled, err := activityRepo.SettleAbandonedAttempts(ctx, 15*time.Minute); err != nil {
+		log.Printf("activity: settle abandoned QR attempts failed: %v", err)
+	} else if settled > 0 {
+		activity.Printf("closed %d QR scan attempt(s) a restart left open", settled)
+	}
 
 	if err := auth.Init(cfg.ClerkSecretKey); err != nil {
 		fatalf("clerk configuration failed: %v", err)

@@ -77,6 +77,11 @@ func (r *Repository) Create(ctx context.Context, userID string, req CreateReques
 
 	a := req.Agent
 	status := defaultString(a.Status, DefaultStatus)
+	// An agent created with a number starts live unless the request says
+	// otherwise: connecting a number is the activation.
+	if a.Status == "" && normalizeNullable(a.PhoneNumberID) != nil {
+		status = "active"
+	}
 	provider, model, temperature := DefaultProvider, DefaultModel, DefaultTemperature
 	if req.Model != nil && req.Model.Temperature != nil {
 		temperature = *req.Model.Temperature
@@ -177,12 +182,20 @@ func (r *Repository) Update(ctx context.Context, userID, id string, req UpdateRe
 	// number from an agent that is already active.
 	nextStatus := current.Agent.Status
 	nextPhoneNumberID := current.Agent.PhoneNumberID
+	activate := false
 	if a := req.Agent; a != nil {
 		if a.Status != nil {
 			nextStatus = *a.Status
 		}
 		if a.PhoneNumberID.Set {
 			nextPhoneNumberID = normalizeNullable(a.PhoneNumberID.Value)
+			// Giving the agent a number it did not have takes it live; a status
+			// sent in the same request still wins.
+			activate = a.Status == nil && nextPhoneNumberID != nil &&
+				(current.Agent.PhoneNumberID == nil || strings.TrimSpace(*current.Agent.PhoneNumberID) != *nextPhoneNumberID)
+			if activate {
+				nextStatus = "active"
+			}
 		}
 	}
 	if err := validateActiveHasPhone(nextStatus, nextPhoneNumberID); err != nil {
@@ -208,6 +221,8 @@ func (r *Repository) Update(ctx context.Context, userID, id string, req UpdateRe
 		}
 		if a.Status != nil {
 			add("status", *a.Status)
+		} else if activate {
+			add("status", "active")
 		}
 	}
 	if m := req.Model; m != nil {

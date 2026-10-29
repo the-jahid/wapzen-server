@@ -217,7 +217,7 @@ func updateAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "updateAgent",
 		"summary":     "Update Agent",
-		"description": "Applies a partial update to an existing outbound agent owned by the authenticated API key owner. Only the supplied fields are changed. Assigning `agent.phone_number_id` is rejected (409) when another agent already uses that phone number. Sending `knowledge_base.knowledge_base_ids` or `tools.tool_ids` replaces that attachment set wholesale; omitting a section leaves it untouched.",
+		"description": "Applies a partial update to an existing outbound agent owned by the authenticated API key owner. Only the supplied fields are changed. Assigning `agent.phone_number_id` is rejected (409) when another agent already uses that phone number. Assigning a number the agent did not already have also sets its status to `active`, unless `agent.status` is sent in the same request. Sending `knowledge_base.knowledge_base_ids` or `tools.tool_ids` replaces that attachment set wholesale; omitting a section leaves it untouched.",
 		"security":    apiKeySecurity(),
 		"parameters":  []any{agentIDParam()},
 		"requestBody": requestBody("The fields to change.", "UpdateAgentRequest", examples.UpdateAgentRequestExample),

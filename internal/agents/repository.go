@@ -232,6 +232,10 @@ func (r *Repository) update(ctx context.Context, userID, agentID string, patch a
 	}
 	defer tx.Rollback(ctx)
 
+	if err := activateOnNewPhoneNumber(ctx, tx, userID, agentID, &patch); err != nil {
+		return types.AgentResource{}, err
+	}
+
 	row, err := updateRow(ctx, tx, userID, agentID, patch)
 	if err != nil {
 		return types.AgentResource{}, err
@@ -271,6 +275,43 @@ func (r *Repository) update(ctx context.Context, userID, agentID string, patch a
 	// Re-read the attachments so the response reflects their persisted state
 	// whether or not this request replaced them.
 	return r.withAttachments(ctx, row)
+}
+
+// activateOnNewPhoneNumber takes the agent live when the patch gives it a number
+// it did not already have: connecting a number is how an owner says "answer on
+// this", so there is no separate activation step. A status the same request
+// sets explicitly wins, which is how a caller assigns a number and keeps the
+// agent paused. The current number is read under a row lock so a concurrent
+// PATCH cannot slip between the comparison and the write.
+func activateOnNewPhoneNumber(ctx context.Context, tx pgx.Tx, userID, agentID string, patch *agentPatch) error {
+	if patch.columns.has("status") {
+		return nil
+	}
+	value, ok := patch.columns.get("phone_number_id")
+	if !ok {
+		return nil
+	}
+	next, _ := value.(*string)
+	if !hasPhoneNumberAssigned(next) {
+		return nil
+	}
+
+	var current *string
+	err := tx.QueryRow(ctx,
+		`SELECT phone_number_id FROM agents WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+		agentID, userID,
+	).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// updateRow reports the missing agent.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read agent phone number: %w", err)
+	}
+	if !samePhoneNumber(current, next) {
+		patch.columns.add("status", "active")
+	}
+	return nil
 }
 
 // updateRow writes the patch's scalar columns and returns the persisted row. A

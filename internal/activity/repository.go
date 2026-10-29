@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,19 +16,43 @@ type Repository struct {
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-// Insert saves one entry. An empty Detail is stored as NULL. A QR scan entry
-// also starts or settles its qr_scan_attempts row in the same round trip.
+// Insert saves one entry. An empty Detail is stored as NULL, and an empty
+// Email is filled in from the user (a resumed number's session has none). A QR
+// scan entry also starts or settles its qr_scan_attempts row in the same round
+// trip.
 func (r *Repository) Insert(ctx context.Context, entry Entry) error {
 	batch := &pgx.Batch{}
 	batch.Queue(`
 		INSERT INTO activity_logs (user_id, email, event, message, detail)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''))`,
+		VALUES ($1, COALESCE(NULLIF($2, ''), (SELECT email FROM users WHERE id = $1), ''), $3, $4, NULLIF($5, ''))`,
 		entry.UserID, entry.Email, string(entry.Event), entry.Message, entry.Detail,
 	)
 	if entry.Attempt != nil && entry.Attempt.ID != "" {
 		queueAttempt(batch, entry)
 	}
 	return r.pool.SendBatch(ctx, batch).Close()
+}
+
+// AbandonedReason is the failure_reason given to an attempt no process will
+// settle any more.
+const AbandonedReason = "the server restarted before the scan finished"
+
+// SettleAbandonedAttempts fails every attempt still open after olderThan. A
+// login lives in one process's memory, so a deploy or crash ends it without an
+// outcome and its row would otherwise read "started" forever. olderThan must
+// outlast the longest login, so the other instance of a deploy keeps its live
+// ones.
+func (r *Repository) SettleAbandonedAttempts(ctx context.Context, olderThan time.Duration) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE qr_scan_attempts
+		SET status = 'failed', failure_reason = $2, finished_at = now()
+		WHERE status = 'started' AND started_at < now() - make_interval(secs => $1)`,
+		olderThan.Seconds(), AbandonedReason,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // attemptStatus is the qr_scan_attempts.status an outcome event settles on.

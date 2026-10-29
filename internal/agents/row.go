@@ -182,6 +182,16 @@ func (s *columnSet) has(col string) bool {
 	return false
 }
 
+// get returns the value the set writes to col, and whether it writes col at all.
+func (s *columnSet) get(col string) (any, bool) {
+	for i, c := range s.cols {
+		if c == col {
+			return s.args[i], true
+		}
+	}
+	return nil, false
+}
+
 // addNonZero writes col only when v is not its type's zero value — how a create
 // request says "use the default" for a plain field.
 func addNonZero[T comparable](s *columnSet, col string, v T) {

@@ -103,9 +103,11 @@ func (r *Repository) AssignPhoneNumberIfUnassigned(ctx context.Context, userID, 
 		return false, err
 	}
 
+	// The scan also takes the agent live: a number connected for an agent is
+	// meant to be answered on, so there is no separate activation step.
 	const q = `
 		UPDATE agents
-		SET phone_number_id = $1, updated_at = now()
+		SET phone_number_id = $1, status = 'active', updated_at = now()
 		WHERE id = $2
 			AND user_id = $3
 			AND (phone_number_id IS NULL OR btrim(phone_number_id) = '')`

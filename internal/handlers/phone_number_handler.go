@@ -173,6 +173,13 @@ func (h *PhoneNumberHandler) Login(w http.ResponseWriter, r *http.Request) {
 		phoneNumber, err = h.loginManager.StartLogin(r.Context(), user.ID, req.PhoneNumber, req.Label, derefString(req.AgentID))
 	}
 	if err != nil {
+		if errors.Is(err, whatsapplogin.ErrPairingCodeRateLimited) {
+			writeJSON(w, http.StatusTooManyRequests, models.APIResponse{
+				Success: false,
+				Message: "WhatsApp has paused pairing codes for this number after too many requests. Wait a few minutes before asking for a new code, or scan the QR code instead.",
+			})
+			return
+		}
 		if errors.Is(err, whatsapplogin.ErrPairingCodeRejected) {
 			writeJSON(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
