@@ -290,7 +290,8 @@ func (r *Repository) LiveInboundForPhoneNumber(ctx context.Context, phoneNumberI
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, model_temperature, prompt_system_prompt
 		FROM chat_agents
-		WHERE phone_number_id=$1 AND status='active'`, phoneNumberID).
+		WHERE phone_number_id=$1 AND status='active'
+			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id=chat_agents.user_id AND u.blocked_at IS NOT NULL)`, phoneNumberID).
 		Scan(&live.ID, &live.ModelTemperature, &live.SystemPrompt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

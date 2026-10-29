@@ -53,7 +53,7 @@ func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.Us
 		INSERT INTO users (email, oauth_id, username)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (oauth_id) DO NOTHING
-		RETURNING id, email, oauth_id, username, created_at, updated_at
+		RETURNING id, email, oauth_id, username, created_at, updated_at, blocked_at
 	`
 
 	user, err := scanUser(tx.QueryRow(ctx, insertQuery, params.Email, params.ClerkID, params.Username))
@@ -73,7 +73,7 @@ func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.Us
 				username = $3,
 				updated_at = now()
 			WHERE oauth_id = $2
-			RETURNING id, email, oauth_id, username, created_at, updated_at
+			RETURNING id, email, oauth_id, username, created_at, updated_at, blocked_at
 		`
 		user, err = scanUser(tx.QueryRow(ctx, updateQuery, params.Email, params.ClerkID, params.Username))
 		if err != nil {
@@ -99,7 +99,7 @@ func (r *Repository) GetByClerkID(ctx context.Context, clerkID string) (models.U
 	}
 
 	const query = `
-		SELECT id, email, oauth_id, username, created_at, updated_at
+		SELECT id, email, oauth_id, username, created_at, updated_at, blocked_at
 		FROM users
 		WHERE oauth_id = $1
 	`
@@ -113,6 +113,23 @@ func (r *Repository) GetByClerkID(ctx context.Context, clerkID string) (models.U
 	}
 	r.cache.put(user, time.Now())
 	return user, nil
+}
+
+// FirstPhoneNumber returns the user's oldest connected WhatsApp number, or ""
+// when they have none.
+func (r *Repository) FirstPhoneNumber(ctx context.Context, userID string) (string, error) {
+	var phone string
+	err := r.pool.QueryRow(ctx, `
+		SELECT phone_number FROM phone_numbers
+		WHERE user_id = $1 AND phone_number <> ''
+		ORDER BY created_at LIMIT 1`, userID).Scan(&phone)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("first phone number: %w", err)
+	}
+	return phone, nil
 }
 
 // DeleteByClerkID removes the application user for a Clerk user ID.
@@ -142,6 +159,7 @@ func scanUser(row userScanner) (models.User, error) {
 		&user.Username,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+		&user.BlockedAt,
 	); err != nil {
 		return models.User{}, err
 	}

@@ -93,6 +93,10 @@ func (a *Auth) RequireUser(next http.Handler) http.Handler {
 				writeAuthJSON(w, http.StatusInternalServerError, "failed to resolve the authenticated user")
 				return
 			}
+			if user.BlockedAt != nil {
+				a.writeBlocked(w, r, user)
+				return
+			}
 
 			ctx := context.WithValue(r.Context(), userContextKey{}, user)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -110,6 +114,10 @@ func (a *Auth) RequireUser(next http.Handler) http.Handler {
 			if err != nil {
 				log.Printf("auth: resolving user for clerk id %q failed: %v", claims.Subject, err)
 				writeAuthJSON(w, http.StatusInternalServerError, "failed to resolve the authenticated user")
+				return
+			}
+			if user.BlockedAt != nil {
+				a.writeBlocked(w, r, user)
 				return
 			}
 
@@ -142,6 +150,10 @@ func (a *Auth) RequireAPIKeyUser(next http.Handler) http.Handler {
 			}
 			log.Printf("auth: resolving user for api key failed: %v", err)
 			writeAuthJSON(w, http.StatusInternalServerError, "failed to resolve the authenticated user")
+			return
+		}
+		if user.BlockedAt != nil {
+			a.writeBlocked(w, r, user)
 			return
 		}
 

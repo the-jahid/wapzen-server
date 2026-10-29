@@ -152,12 +152,14 @@ func (r *Repository) ListWAJIDs(ctx context.Context) ([]string, error) {
 
 // ListResumable returns every phone number that still has valid stored WhatsApp
 // credentials worth reconnecting on startup: both currently-connected rows and
-// rows that lost their live socket (disconnected).
+// rows that lost their live socket (disconnected). A blocked account's numbers
+// are left offline.
 func (r *Repository) ListResumable(ctx context.Context) ([]models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM phone_numbers
 		WHERE status = ANY($1)
+			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = phone_numbers.user_id AND u.blocked_at IS NOT NULL)
 		ORDER BY created_at DESC, id DESC
 	`, returningColumns)
 

@@ -175,7 +175,7 @@ func (r *Repository) Authenticate(ctx context.Context, bearerKey string) (models
 			WHERE key_hash = $1 AND revoked_at IS NULL
 			RETURNING user_id
 		)
-		SELECT u.id, u.email, u.oauth_id, u.username, u.created_at, u.updated_at
+		SELECT u.id, u.email, u.oauth_id, u.username, u.created_at, u.updated_at, u.blocked_at
 		FROM touched t
 		JOIN users u ON u.id = t.user_id
 	`
@@ -188,6 +188,7 @@ func (r *Repository) Authenticate(ctx context.Context, bearerKey string) (models
 		&user.Username,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+		&user.BlockedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.User{}, ErrNotFound

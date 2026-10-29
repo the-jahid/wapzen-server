@@ -90,6 +90,7 @@ func (r *Repository) liveAgentForPhoneNumber(ctx context.Context, phoneNumberID,
 		WHERE phone_number_id = $1
 			AND status = 'active'
 			AND call_direction IN ($2, 'both')
+			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = agents.user_id AND u.blocked_at IS NOT NULL)
 		LIMIT 1`
 
 	var (

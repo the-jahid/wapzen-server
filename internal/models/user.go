@@ -10,4 +10,7 @@ type User struct {
 	Username  *string   `json:"username,omitempty" example:"janedoe"`
 	CreatedAt time.Time `json:"createdAt" example:"2026-06-30T10:00:00Z"`
 	UpdatedAt time.Time `json:"updatedAt" example:"2026-06-30T10:00:00Z"`
+	// BlockedAt is set when an operator has blocked the account; auth then
+	// refuses every request it makes (see middleware.Auth).
+	BlockedAt *time.Time `json:"blockedAt,omitempty"`
 }
