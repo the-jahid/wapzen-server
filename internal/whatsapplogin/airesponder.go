@@ -206,7 +206,7 @@ func (r *aiResponder) replyAnthropic(ctx context.Context, agent chatagents.LiveA
 // anthropicFallbackModel answers for an agent whose saved model Anthropic has
 // retired. Agents keep the model they were saved with, so without it a
 // retirement silently stops every reply those agents would have sent.
-const anthropicFallbackModel = "claude-sonnet-5"
+const anthropicFallbackModel = chatagents.DefaultModel
 
 var (
 	// anthropicNoTemperature holds the models that refused temperature, so only

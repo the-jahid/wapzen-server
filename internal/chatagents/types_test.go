@@ -37,6 +37,22 @@ func TestValidateChatAgentSettings(t *testing.T) {
 	}
 }
 
+func TestChatAgentModelIsFixed(t *testing.T) {
+	other, openai, fixed := "claude-sonnet-5", "openai", DefaultModel
+	if err := ValidateCreate(CreateRequest{
+		Agent: &CreateAgentSection{Name: "Support"},
+		Model: &CreateModelSection{Name: other},
+	}); err == nil {
+		t.Fatal("create with another model was accepted")
+	}
+	if err := ValidateUpdate(UpdateRequest{Model: &UpdateModelSection{Provider: &openai}}); err == nil {
+		t.Fatal("update to another provider was accepted")
+	}
+	if err := ValidateUpdate(UpdateRequest{Model: &UpdateModelSection{Name: &fixed}}); err != nil {
+		t.Fatalf("update naming the fixed model was rejected: %v", err)
+	}
+}
+
 func TestActiveChatAgentRequiresPhoneNumber(t *testing.T) {
 	if err := ValidateCreate(CreateRequest{
 		Agent: &CreateAgentSection{Name: "Support", Status: "active"},

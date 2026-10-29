@@ -11,10 +11,13 @@ import (
 
 var ErrPhoneNumberRequired = errors.New("assign a phone number before activating the chat agent")
 
+// DefaultProvider and DefaultModel are not just defaults: they are the only
+// model a chat agent may use. Requests naming anything else are rejected, and
+// the incoming-message path answers with this model whatever a row says.
 const (
 	DefaultStatus       = "inactive"
 	DefaultProvider     = "anthropic"
-	DefaultModel        = "claude-sonnet-5"
+	DefaultModel        = "claude-sonnet-4-6"
 	DefaultTemperature  = 0.3
 	DefaultSystemPrompt = "You are a helpful, friendly WhatsApp chat assistant."
 )
@@ -208,14 +211,8 @@ func ValidateUpdate(req UpdateRequest) error {
 		}
 	}
 	if m := req.Model; m != nil {
-		if m.Provider != nil && !oneOf(*m.Provider, "openai", "anthropic") {
-			return fmt.Errorf("model.provider must be openai or anthropic")
-		}
-		if m.Name != nil && strings.TrimSpace(*m.Name) == "" {
-			return fmt.Errorf("model.name cannot be empty")
-		}
-		if m.Temperature != nil && (*m.Temperature < 0.1 || *m.Temperature > 1) {
-			return fmt.Errorf("model.temperature must be between 0.1 and 1")
+		if err := validateModel(deref(m.Provider), deref(m.Name), m.Temperature); err != nil {
+			return err
 		}
 	}
 	if p := req.Prompt; p != nil {
@@ -233,12 +230,14 @@ func validateAgent(status string) error {
 	return nil
 }
 
+// validateModel accepts the fixed model only; provider and name may be omitted
+// but cannot name anything else.
 func validateModel(provider, name string, temperature *float64) error {
-	if provider != "" && !oneOf(provider, "openai", "anthropic") {
-		return fmt.Errorf("model.provider must be openai or anthropic")
+	if provider != "" && provider != DefaultProvider {
+		return fmt.Errorf("model.provider must be %s", DefaultProvider)
 	}
-	if name != "" && strings.TrimSpace(name) == "" {
-		return fmt.Errorf("model.name cannot be empty")
+	if name != "" && strings.TrimSpace(name) != DefaultModel {
+		return fmt.Errorf("model.name must be %s", DefaultModel)
 	}
 	if temperature != nil && (*temperature < 0.1 || *temperature > 1) {
 		return fmt.Errorf("model.temperature must be between 0.1 and 1")
@@ -251,6 +250,13 @@ func validatePrompt(system string) error {
 		return fmt.Errorf("prompt.system_prompt cannot be empty")
 	}
 	return nil
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func oneOf(value string, choices ...string) bool {

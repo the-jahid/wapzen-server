@@ -299,8 +299,9 @@ func TestReplyAnthropicRecoversFromStaleModelSettings(t *testing.T) {
 		{"claude-strict-1", []string{"claude-strict-1", "claude-strict-1"}, []bool{true, false}},
 		// Remembered: the next reply skips the refused temperature outright.
 		{"claude-strict-1", []string{"claude-strict-1"}, []bool{false}},
-		{"claude-retired-1", []string{"claude-retired-1", anthropicFallbackModel}, []bool{true, false}},
-		{"claude-retired-1", []string{anthropicFallbackModel}, []bool{false}},
+		// The fallback, Sonnet 4.6, still takes temperature.
+		{"claude-retired-1", []string{"claude-retired-1", anthropicFallbackModel}, []bool{true, true}},
+		{"claude-retired-1", []string{anthropicFallbackModel}, []bool{true}},
 	} {
 		models, temperatures = nil, nil
 		reply, err := responder.Reply(context.Background(), chatagents.LiveAgent{

@@ -78,12 +78,8 @@ func (r *Repository) Create(ctx context.Context, userID string, req CreateReques
 	a := req.Agent
 	status := defaultString(a.Status, DefaultStatus)
 	provider, model, temperature := DefaultProvider, DefaultModel, DefaultTemperature
-	if req.Model != nil {
-		provider = defaultString(req.Model.Provider, provider)
-		model = defaultString(req.Model.Name, model)
-		if req.Model.Temperature != nil {
-			temperature = *req.Model.Temperature
-		}
+	if req.Model != nil && req.Model.Temperature != nil {
+		temperature = *req.Model.Temperature
 	}
 	systemPrompt := DefaultSystemPrompt
 	if req.Prompt != nil {
@@ -215,11 +211,9 @@ func (r *Repository) Update(ctx context.Context, userID, id string, req UpdateRe
 		}
 	}
 	if m := req.Model; m != nil {
-		if m.Provider != nil {
-			add("model_provider", *m.Provider)
-		}
-		if m.Name != nil {
-			add("model_name", strings.TrimSpace(*m.Name))
+		if m.Provider != nil || m.Name != nil {
+			add("model_provider", DefaultProvider)
+			add("model_name", DefaultModel)
 		}
 		if m.Temperature != nil {
 			add("model_temperature", *m.Temperature)
@@ -289,14 +283,15 @@ func (r *Repository) PhoneNumberID(ctx context.Context, userID, id string) (*str
 
 // LiveInboundForPhoneNumber is deliberately unscoped by user: message delivery
 // starts with the connected phone-number row, whose ownership was verified when
-// the assignment was written.
+// the assignment was written. The model is always the fixed one, whatever an
+// older row still says.
 func (r *Repository) LiveInboundForPhoneNumber(ctx context.Context, phoneNumberID string) (*LiveAgent, error) {
-	var live LiveAgent
+	live := LiveAgent{ModelProvider: DefaultProvider, ModelName: DefaultModel}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, model_provider, model_name, model_temperature, prompt_system_prompt
+		SELECT id, model_temperature, prompt_system_prompt
 		FROM chat_agents
 		WHERE phone_number_id=$1 AND status='active'`, phoneNumberID).
-		Scan(&live.ID, &live.ModelProvider, &live.ModelName, &live.ModelTemperature, &live.SystemPrompt)
+		Scan(&live.ID, &live.ModelTemperature, &live.SystemPrompt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
