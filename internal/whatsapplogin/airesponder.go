@@ -30,6 +30,15 @@ const (
 	// the person waits through with the typing indicator on, and a model that
 	// keeps reaching for tools has to produce an answer at some point.
 	chatMaxToolRounds = 3
+
+	// chatReplyStyle follows every agent's own prompt. Reply time is almost all
+	// the model writing: Sonnet 4.6 produces roughly 130 characters a second, so
+	// the 1,000-character answers agents gave to a one-line question kept the
+	// sender waiting 8s, against about 2.5s for a 250-character one. The agent's
+	// prompt can still ask for more, which is why it is worded as a default.
+	chatReplyStyle = "You are replying in a WhatsApp chat. Write the way a person texts: " +
+		"usually one to three short sentences, about 60 words at most, with no headings or long lists. " +
+		"Give a longer answer only when the person asks for detail or your instructions above call for it."
 )
 
 type aiMessage struct {
@@ -103,6 +112,7 @@ func (r *aiResponder) Reply(ctx context.Context, agent chatagents.LiveAgent, mes
 	if directive := tools.Instructions(); directive != "" {
 		instructions = strings.TrimSpace(instructions + "\n\n" + directive)
 	}
+	instructions = strings.TrimSpace(instructions + "\n\n" + chatReplyStyle)
 
 	if agent.ModelProvider == "anthropic" {
 		return r.replyAnthropic(ctx, agent, instructions, messages, tools)
