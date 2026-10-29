@@ -116,6 +116,7 @@ func (a *Auth) RequireUser(next http.Handler) http.Handler {
 			activity.SeenUser(user.ID, user.Email)
 			ctx := context.WithValue(r.Context(), userContextKey{}, user)
 			ctx = activity.WithEmail(ctx, user.Email)
+			ctx = activity.WithUserAgent(ctx, r.UserAgent())
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})).ServeHTTP(w, r)
 	})

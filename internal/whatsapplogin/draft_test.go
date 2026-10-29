@@ -120,3 +120,45 @@ func TestNilDraftMeansTheRowAlreadyExists(t *testing.T) {
 		t.Fatal("a session with no draft reported that it has no row")
 	}
 }
+
+// A code login replaces whatever QR login the user had running, and only theirs.
+func TestEndLiveDraftsEndsOnlyThatUsersLogins(t *testing.T) {
+	m := newDraftManager()
+	mine := m.newTestDraft("user_123")
+	theirs := m.newTestDraft("user_456")
+
+	m.endLiveDrafts("user_123")
+
+	if _, ok := m.Draft("user_123", mine.snapshot().ID); ok {
+		t.Fatal("the user's QR login survived starting a code login")
+	}
+	if _, ok := m.Draft("user_456", theirs.snapshot().ID); !ok {
+		t.Fatal("another user's QR login was ended")
+	}
+}
+
+func TestDraftReportsHowLongItsQRCodeLasts(t *testing.T) {
+	m := newDraftManager()
+	draft := m.newTestDraft("user_123")
+
+	if row := draft.snapshot(); row.QRExpiresInMs != nil {
+		t.Fatalf("a login with no code yet reports an expiry of %dms", *row.QRExpiresInMs)
+	}
+
+	draft.setQRCode("data:image/png;base64,AAAA", time.Now().Add(20*time.Second))
+	row := draft.snapshot()
+	if row.QRExpiresInMs == nil || *row.QRExpiresInMs <= 19_000 || *row.QRExpiresInMs > 20_000 {
+		t.Fatalf("a fresh 20s code reports %v ms left", row.QRExpiresInMs)
+	}
+
+	draft.setQRCode("data:image/png;base64,BBBB", time.Now().Add(-time.Second))
+	if row := draft.snapshot(); row.QRExpiresInMs == nil || *row.QRExpiresInMs != 0 {
+		t.Fatalf("a code past its lifetime reports %v ms left, want 0", row.QRExpiresInMs)
+	}
+
+	// Once the login has ended, the code on it is not one to count down.
+	draft.setStatus(models.PhoneNumberStatusDisconnected)
+	if row := draft.snapshot(); row.QRExpiresInMs != nil {
+		t.Fatalf("an ended login still reports %dms left on its code", *row.QRExpiresInMs)
+	}
+}

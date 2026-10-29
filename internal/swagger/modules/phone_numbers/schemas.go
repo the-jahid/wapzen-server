@@ -48,6 +48,8 @@ func phoneNumberResourceSchema() oas.Object {
 		P("wa_jid", oas.Str().Nullable().Desc("WhatsApp device JID stored after pairing.").Example("15551234567:1@s.whatsapp.net")).
 		P("status", oas.Str().Desc("WhatsApp login lifecycle status.").Enum([]string{"pending_qr", "connected", "disconnected"}).Example("pending_qr")).
 		P("qr_code", qrCodeFieldSchema()).
+		P("qr_expires_in_ms", oas.Int().Desc("Milliseconds until qr_code stops being scannable, counted from when the response was built (WhatsApp gives the first code 60s, later ones 20s). Only present on an unscanned QR login.").Example(17000)).
+		P("pairing_code", oas.Str().Desc("8-character code to type into WhatsApp › Linked devices › Link with phone number instead. Only present on an unscanned login started with pairing_method phone_code.").Example("ABCD-EFGH")).
 		P("last_connected_at", oas.Str().Format("date-time").Nullable().Desc("Most recent successful WhatsApp connection timestamp.").Example("2026-07-03T10:00:00Z")).
 		P("created_at", oas.Str().Format("date-time").Desc("Creation timestamp.").Example("2026-07-03T10:00:00Z")).
 		P("updated_at", oas.Str().Format("date-time").Desc("Last-update timestamp.").Example("2026-07-03T10:00:00Z")).
@@ -62,6 +64,7 @@ func loginPhoneNumberRequestSchema() oas.Object {
 		P("force_repair", oas.Bool().Desc("Unlink the current companion and issue a fresh QR without deleting the phone-number row. Requires phone_number_id.").Default(false).Example(false)).
 		P("phone_number", phoneNumberFieldSchema()).
 		P("label", labelFieldSchema()).
+		P("pairing_method", oas.Str().Desc("qr (scan a QR code) or phone_code (get an 8-character pairing_code to type into WhatsApp, for users who cannot scan). phone_code requires phone_number and takes no phone_number_id.").Enum([]string{"qr", "phone_code"}).Default("qr").Example("qr")).
 		Build()
 }
 

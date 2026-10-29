@@ -38,6 +38,11 @@ type loginPhoneNumberRequest struct {
 	// it, which is how the agent editor links a number in one step. Omit it to
 	// link a number that no agent uses yet.
 	AgentID *string `json:"agent_id" example:"agent_12345"`
+	// PairingMethod is "qr" (the default: scan a QR code) or "phone_code": link
+	// by typing an 8-character code into WhatsApp, for a user who cannot scan
+	// because the dashboard is open on the phone itself. phone_code needs
+	// phone_number and starts a new login, so it takes no phone_number_id.
+	PairingMethod string `json:"pairing_method,omitempty" example:"qr" enums:"qr,phone_code"`
 }
 
 type logoutPhoneNumberRequest struct {
@@ -115,7 +120,7 @@ func (h *PhoneNumberHandler) List(w http.ResponseWriter, r *http.Request) {
 //
 // Login godoc
 // @Summary      Start WhatsApp QR login
-// @Description  Starts a WhatsApp Linked Devices QR login session. Pass phone_number_id to restart a non-connected login; add force_repair to replace a connected companion without deleting its row. Pass agent_id to assign the linked number to that agent as soon as the scan connects it.
+// @Description  Starts a WhatsApp Linked Devices QR login session. Pass phone_number_id to restart a non-connected login; add force_repair to replace a connected companion without deleting its row. Pass agent_id to assign the linked number to that agent as soon as the scan connects it. Pass pairing_method phone_code with phone_number to get an 8-character pairing_code to type into WhatsApp instead of scanning.
 // @Tags         phone-number
 // @Accept       json
 // @Produce      json
@@ -146,13 +151,35 @@ func (h *PhoneNumberHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	byCode := req.PairingMethod == "phone_code"
+	if byCode && (req.PhoneNumber == nil || req.PhoneNumberID != nil) {
+		writeJSON(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "pairing_method phone_code needs phone_number and no phone_number_id",
+		})
+		return
+	}
+
 	if req.PhoneNumberID != nil {
 		h.restartLogin(w, r, user.ID, *req.PhoneNumberID, req.ForceRePair, derefString(req.AgentID))
 		return
 	}
 
-	phoneNumber, err := h.loginManager.StartLogin(r.Context(), user.ID, req.PhoneNumber, req.Label, derefString(req.AgentID))
+	var phoneNumber models.PhoneNumber
+	var err error
+	if byCode {
+		phoneNumber, err = h.loginManager.StartPhoneLogin(r.Context(), user.ID, *req.PhoneNumber, req.Label, derefString(req.AgentID))
+	} else {
+		phoneNumber, err = h.loginManager.StartLogin(r.Context(), user.ID, req.PhoneNumber, req.Label, derefString(req.AgentID))
+	}
 	if err != nil {
+		if errors.Is(err, whatsapplogin.ErrPairingCodeRejected) {
+			writeJSON(w, http.StatusBadRequest, models.APIResponse{
+				Success: false,
+				Message: "WhatsApp could not create a code for this number. Check it includes the country code and is the number WhatsApp is on.",
+			})
+			return
+		}
 		if errors.Is(err, whatsapplogin.ErrAgentNotFound) {
 			writeJSON(w, http.StatusNotFound, models.APIResponse{
 				Success: false,
@@ -389,6 +416,14 @@ func decodeLoginPhoneNumberRequest(w http.ResponseWriter, r *http.Request) (logi
 				return loginPhoneNumberRequest{}, false
 			}
 			req.PhoneNumber = optionalString(phoneNumber)
+		}
+		req.PairingMethod = strings.TrimSpace(req.PairingMethod)
+		if req.PairingMethod != "" && req.PairingMethod != "qr" && req.PairingMethod != "phone_code" {
+			writeJSON(w, http.StatusBadRequest, models.APIResponse{
+				Success: false,
+				Message: "pairing_method must be qr or phone_code",
+			})
+			return loginPhoneNumberRequest{}, false
 		}
 		if req.Label != nil {
 			label := strings.TrimSpace(*req.Label)

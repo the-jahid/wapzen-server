@@ -60,6 +60,16 @@ var ErrLoginInProgress = errors.New("phone number login is already in progress")
 // that the requesting user does not own.
 var ErrAgentNotFound = errors.New("agent not found")
 
+// ErrPairingCodeRejected is returned when WhatsApp will not issue a pairing code
+// for the number a user typed, most often because it is not a WhatsApp number
+// or is missing its country code. It wraps WhatsApp's own error.
+var ErrPairingCodeRejected = errors.New("WhatsApp could not create a pairing code for this number")
+
+// pairingCodeClientName is the device name WhatsApp shows in the "Enter code
+// to link new device" prompt. WhatsApp accepts only "Browser (OS)" pairs it
+// knows, and this is the one whatsmeow's own clients use.
+const pairingCodeClientName = "Chrome (Linux)"
+
 // Errors reported when an outbound call cannot be placed. They are wrapped with
 // the specifics, so callers match them with errors.Is and surface the message.
 var (
@@ -157,6 +167,15 @@ type draftLogin struct {
 	row      models.PhoneNumber
 	promoted bool
 	endedAt  time.Time
+
+	// qrExpiresAt is when the code in row.QRCode stops being scannable;
+	// snapshot turns it into row.QRExpiresInMs.
+	qrExpiresAt time.Time
+
+	// byCode marks a login the user links by typing a pairing code rather than
+	// scanning (see StartPhoneLogin). It is set when the draft is made and never
+	// changes, so it is read without the lock.
+	byCode bool
 }
 
 // draftGrace is how long a finished draft stays readable so the page polling it
@@ -177,7 +196,12 @@ func (d *draftLogin) pending() bool {
 func (d *draftLogin) snapshot() models.PhoneNumber {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.row
+	row := d.row
+	if !d.qrExpiresAt.IsZero() && row.QRCode != nil && row.Status == models.PhoneNumberStatusPendingQR {
+		remaining := max(time.Until(d.qrExpiresAt).Milliseconds(), 0)
+		row.QRExpiresInMs = &remaining
+	}
+	return row
 }
 
 // promote records that the scan landed and the row now exists, after which the
@@ -189,11 +213,19 @@ func (d *draftLogin) promote(row models.PhoneNumber) {
 	d.promoted = true
 }
 
-func (d *draftLogin) setQRCode(qrCode string) {
+func (d *draftLogin) setQRCode(qrCode string, expiresAt time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.row.QRCode = &qrCode
+	d.qrExpiresAt = expiresAt
 	d.row.Status = models.PhoneNumberStatusPendingQR
+	d.row.UpdatedAt = time.Now().UTC()
+}
+
+func (d *draftLogin) setPairingCode(code string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.row.PairingCode = &code
 	d.row.UpdatedAt = time.Now().UTC()
 }
 
@@ -495,6 +527,87 @@ func (m *Manager) StartLogin(ctx context.Context, userID string, phoneNumber, la
 	m.storeDraft(draft)
 
 	return m.startSession(ctx, draft.snapshot(), assignAgentID, draft)
+}
+
+// StartPhoneLogin is StartLogin for a user who cannot scan a QR code — most
+// often because the dashboard is open on the very phone they are linking. It
+// asks WhatsApp for an 8-character pairing code for phoneNumber (E.164) and
+// returns the login with that code in PairingCode. WhatsApp also pushes an
+// "Enter code to link new device" prompt to the phone, and once the code is
+// typed in the login pairs and connects exactly as a scanned one does.
+//
+// The code lives only as long as the login socket, which WhatsApp closes when
+// its QR codes run out (about 160s), so this always starts a fresh login rather
+// than reusing a live draft: any QR login the user has running is ended first.
+// A number WhatsApp will not issue a code for is ErrPairingCodeRejected.
+func (m *Manager) StartPhoneLogin(ctx context.Context, userID, phoneNumber string, label *string, assignAgentID string) (models.PhoneNumber, error) {
+	if m == nil {
+		return models.PhoneNumber{}, fmt.Errorf("WhatsApp login manager is not configured")
+	}
+
+	assignAgentID, err := m.validateAssignAgent(ctx, userID, assignAgentID)
+	if err != nil {
+		return models.PhoneNumber{}, err
+	}
+
+	unlock := m.lockLoginStart(userID)
+	defer unlock()
+
+	m.endLiveDrafts(userID)
+
+	draft := &draftLogin{byCode: true, row: models.PhoneNumber{
+		ID:          newLoginID(),
+		UserID:      userID,
+		PhoneNumber: trimmedOptional(&phoneNumber),
+		Label:       trimmedOptional(label),
+		Status:      models.PhoneNumberStatusPendingQR,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}}
+	m.storeDraft(draft)
+
+	row, err := m.startSession(ctx, draft.snapshot(), assignAgentID, draft)
+	if err != nil {
+		return row, err
+	}
+	session := m.getSession(row.ID)
+	if session == nil {
+		// The login ended before its socket was up; the draft says why.
+		return row, fmt.Errorf("%w: the login ended before a code was issued", ErrPairingCodeRejected)
+	}
+
+	code, err := session.client.PairPhone(ctx, phoneNumber, true, whatsmeow.PairClientChrome, pairingCodeClientName)
+	if err != nil {
+		log.Printf("whatsapp login: pairing code request failed phone_number_id=%s: %v", row.ID, err)
+		session.logScanFailed("WhatsApp would not issue a pairing code: " + err.Error())
+		_ = m.markSessionDropped(session)
+		m.finishSession(session, true)
+		return draft.snapshot(), fmt.Errorf("%w: %v", ErrPairingCodeRejected, err)
+	}
+	// whatsmeow hands the code back as "ABCD-EFGH", the way the phone shows it.
+	draft.setPairingCode(code)
+	return draft.snapshot(), nil
+}
+
+// endLiveDrafts ends every unscanned login the user has running, for a new
+// login that must not share the user with one. Each is logged as cancelled.
+func (m *Manager) endLiveDrafts(userID string) {
+	m.draftMu.Lock()
+	var ids []string
+	for id, draft := range m.drafts {
+		if draft.pending() && draft.snapshot().UserID == userID {
+			ids = append(ids, id)
+		}
+	}
+	m.draftMu.Unlock()
+
+	for _, id := range ids {
+		session := m.getSession(id)
+		if session != nil && session.isConnected() {
+			continue
+		}
+		m.DiscardDraft(userID, id)
+	}
 }
 
 // liveDraft returns the user's in-flight QR login, when they have one worth
@@ -825,14 +938,29 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 			return row, fmt.Errorf("create QR channel: %w", err)
 		}
 		session.qrShown = true
-		session.attempt = &activity.QRAttempt{ID: uuid.NewString(), PhoneNumberID: row.ID, AgentID: assignAgentID}
+		session.attempt = &activity.QRAttempt{
+			ID:            uuid.NewString(),
+			PhoneNumberID: row.ID,
+			AgentID:       assignAgentID,
+			Method:        activity.MethodQR,
+			UserAgent:     activity.UserAgent(ctx),
+		}
+		message := fmt.Sprintf("QR scan started: %s was shown a QR code to link a WhatsApp number", session.email)
+		if session.byCode() {
+			session.attempt.Method = activity.MethodPhoneCode
+			number := "a WhatsApp number"
+			if row.PhoneNumber != nil {
+				number = *row.PhoneNumber
+			}
+			message = fmt.Sprintf("QR scan started: %s asked for a pairing code to link %s", session.email, number)
+		}
 		m.storeSession(session)
 		activity.Log(activity.Entry{
 			UserID:  userID,
 			Email:   session.email,
 			Event:   activity.QRScanStarted,
 			Attempt: session.attempt,
-			Message: fmt.Sprintf("QR scan started: %s was shown a QR code to link a WhatsApp number", session.email),
+			Message: message,
 		})
 		go m.consumeQRChannel(session, qrChan)
 	} else {
@@ -891,9 +1019,9 @@ func (m *Manager) sessionRow(ctx context.Context, session *loginSession) (models
 }
 
 // setSessionQRCode publishes a freshly rendered QR code for the login to poll.
-func (m *Manager) setSessionQRCode(session *loginSession, qrCode string) error {
+func (m *Manager) setSessionQRCode(session *loginSession, qrCode string, expiresAt time.Time) error {
 	if session.draft.pending() {
-		session.draft.setQRCode(qrCode)
+		session.draft.setQRCode(qrCode, expiresAt)
 		return nil
 	}
 	_, err := m.repo.SetQRCode(context.Background(), session.userID, session.phoneNumberID, qrCode)
@@ -1466,7 +1594,7 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 				log.Printf("whatsapp login: render QR failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 				continue
 			}
-			if err := m.setSessionQRCode(session, qrCode); err != nil {
+			if err := m.setSessionQRCode(session, qrCode, time.Now().Add(item.Timeout)); err != nil {
 				log.Printf("whatsapp login: store QR failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 				continue
 			}
@@ -1484,7 +1612,11 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 				m.finishSession(session, true)
 				continue
 			}
-			session.logScanFailed("the QR code expired before it was scanned")
+			if session.byCode() {
+				session.logScanFailed("the pairing code expired before it was entered")
+			} else {
+				session.logScanFailed("the QR code expired before it was scanned")
+			}
 			if err := m.markSessionDropped(session); err != nil {
 				log.Printf("whatsapp login: mark expired failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 			}
@@ -2321,6 +2453,12 @@ func connectAndLogout(ctx context.Context, client *whatsmeow.Client) error {
 	}
 
 	return logoutClient(ctx, client)
+}
+
+// byCode reports that this login is linked by a typed pairing code rather than
+// a scan (see StartPhoneLogin).
+func (s *loginSession) byCode() bool {
+	return s.draft != nil && s.draft.byCode
 }
 
 func (s *loginSession) signalFirstQR() {

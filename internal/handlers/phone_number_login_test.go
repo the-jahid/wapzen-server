@@ -45,3 +45,19 @@ func TestDecodeLoginPhoneNumberRequestDropsBlankAgentID(t *testing.T) {
 		}
 	}
 }
+
+// pairing_method is how the dashboard asks for a code to type instead of a QR
+// to scan; anything but the two known methods is a client bug worth a 400.
+func TestDecodeLoginPhoneNumberRequestChecksPairingMethod(t *testing.T) {
+	req, _, ok := decodeLoginBody(t, `{"pairing_method":" phone_code ","phone_number":"+8801639726992"}`)
+	if !ok {
+		t.Fatal("decode rejected a phone_code body")
+	}
+	if req.PairingMethod != "phone_code" {
+		t.Fatalf("pairing_method = %q, want phone_code", req.PairingMethod)
+	}
+
+	if _, resp, ok := decodeLoginBody(t, `{"pairing_method":"sms"}`); ok || resp.Code != http.StatusBadRequest {
+		t.Fatalf("pairing_method sms: ok=%t status=%d, want rejected with 400", ok, resp.Code)
+	}
+}

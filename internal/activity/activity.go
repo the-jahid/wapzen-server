@@ -43,12 +43,25 @@ type Entry struct {
 }
 
 // QRAttempt identifies one QR login. ID is minted when the QR code is shown;
-// PhoneNumberID and AgentID are only read from the qr_scan_started entry.
+// PhoneNumberID, AgentID, Method and UserAgent are only read from the
+// qr_scan_started entry.
+//
+// Method is how the user was asked to link: MethodQR (scan the code) or
+// MethodPhoneCode (type a pairing code into WhatsApp). UserAgent is the browser
+// that asked, so a failed attempt shows whether the user was on a phone.
 type QRAttempt struct {
 	ID            string
 	PhoneNumberID string
 	AgentID       string
+	Method        string
+	UserAgent     string
 }
+
+// Link methods stored in qr_scan_attempts.method.
+const (
+	MethodQR        = "qr"
+	MethodPhoneCode = "phone_code"
+)
 
 // Store saves entries. The Repository in this package is the real one.
 type Store interface {
@@ -116,6 +129,20 @@ func Email(ctx context.Context) string {
 		return email
 	}
 	return "unknown"
+}
+
+type userAgentKey struct{}
+
+// WithUserAgent records the browser that made the request, for the same
+// reason as WithEmail: the login manager saves it on the QR attempt.
+func WithUserAgent(ctx context.Context, userAgent string) context.Context {
+	return context.WithValue(ctx, userAgentKey{}, userAgent)
+}
+
+// UserAgent is the user agent WithUserAgent stored, or "" when there is none.
+func UserAgent(ctx context.Context) string {
+	userAgent, _ := ctx.Value(userAgentKey{}).(string)
+	return strings.TrimSpace(userAgent)
 }
 
 // signInGap is how long a user has to be away before their next request counts

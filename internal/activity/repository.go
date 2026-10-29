@@ -45,12 +45,14 @@ func queueAttempt(batch *pgx.Batch, entry Entry) {
 	attempt := entry.Attempt
 	if entry.Event == QRScanStarted {
 		batch.Queue(`
-			INSERT INTO qr_scan_attempts (id, user_id, email, phone_number_id, agent_id)
-			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''))
+			INSERT INTO qr_scan_attempts (id, user_id, email, phone_number_id, agent_id, method, user_agent)
+			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), COALESCE(NULLIF($6, ''), 'qr'), NULLIF($7, ''))
 			ON CONFLICT (id) DO UPDATE SET
 				phone_number_id = EXCLUDED.phone_number_id,
-				agent_id = EXCLUDED.agent_id`,
-			attempt.ID, entry.UserID, entry.Email, attempt.PhoneNumberID, attempt.AgentID,
+				agent_id = EXCLUDED.agent_id,
+				method = EXCLUDED.method,
+				user_agent = EXCLUDED.user_agent`,
+			attempt.ID, entry.UserID, entry.Email, attempt.PhoneNumberID, attempt.AgentID, attempt.Method, attempt.UserAgent,
 		)
 		return
 	}
