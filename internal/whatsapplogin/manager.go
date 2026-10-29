@@ -141,6 +141,7 @@ type phoneNumberRepository interface {
 	ListResumable(context.Context) ([]models.PhoneNumber, error)
 	ListWAJIDs(context.Context) ([]string, error)
 	GetByUser(context.Context, string, string) (models.PhoneNumber, error)
+	GetByUserPhone(context.Context, string, string) (models.PhoneNumber, error)
 	CreatePaired(context.Context, string, string, *string, *string, string) (models.PhoneNumber, error)
 	SetQRCode(context.Context, string, string, string) (models.PhoneNumber, error)
 	MarkConnected(context.Context, string, string, string, *string) (models.PhoneNumber, error)
@@ -1070,8 +1071,14 @@ func (m *Manager) markSessionConnected(session *loginSession, waJID string, phon
 	defer session.persistMu.Unlock()
 
 	if !session.draft.pending() {
-		log.Printf("whatsapp login [debug]: updating existing row to connected phone_number_id=%s user_id=%s wa_jid=%s", session.phoneNumberID, session.userID, waJID)
-		_, err := m.repo.MarkConnected(context.Background(), session.userID, session.phoneNumberID, waJID, phoneNumber)
+		// A login whose scan relinked a number the account already had was
+		// promoted to that number's row, which keeps its own id.
+		rowID := session.phoneNumberID
+		if session.draft != nil {
+			rowID = session.draft.snapshot().ID
+		}
+		log.Printf("whatsapp login [debug]: updating existing row to connected phone_number_id=%s user_id=%s wa_jid=%s", rowID, session.userID, waJID)
+		_, err := m.repo.MarkConnected(context.Background(), session.userID, rowID, waJID, phoneNumber)
 		return err
 	}
 
@@ -1694,12 +1701,18 @@ func qrTimeoutReason(byCode bool, lasted time.Duration) string {
 // on its QR code.
 func (m *Manager) recordPairing(session *loginSession, jid types.JID) {
 	session.pairOnce.Do(func() {
-		if err := m.markSessionConnected(session, jid.String(), phoneNumberFromJID(jid)); err != nil {
+		err := m.markSessionConnected(session, jid.String(), phoneNumberFromJID(jid))
+		duplicate := isUniqueViolation(err) && session.draft.pending()
+		var relinked models.PhoneNumber
+		if duplicate {
+			relinked, err = m.relinkExistingNumber(session, jid)
+		}
+		if err != nil {
 			log.Printf("whatsapp login: record paired number failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 			session.logScanFailed(scanFailureReason(err))
 			if session.draft.pending() {
 				_ = m.markSessionDropped(session)
-				if isUniqueViolation(err) {
+				if duplicate {
 					go m.unlinkUnrecordedPairing(session)
 				}
 			}
@@ -1707,6 +1720,10 @@ func (m *Manager) recordPairing(session *loginSession, jid types.JID) {
 		}
 		session.logScanOutcome(activity.QRScanWorked, "+"+jid.User,
 			fmt.Sprintf("QR scan worked: %s linked WhatsApp number +%s", session.email, jid.User))
+		if duplicate {
+			go m.handOverRelinkedNumber(session, relinked)
+			return
+		}
 		if session.isClosing() {
 			// The session was torn down while the pairing was landing. The number
 			// is real and its device is stored, so it is kept, as disconnected:

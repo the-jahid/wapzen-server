@@ -203,6 +203,25 @@ func (r *Repository) GetByUser(ctx context.Context, userID, phoneNumberID string
 	return row, nil
 }
 
+// GetByUserPhone returns the user's row for phoneNumber (E.164, as rows store
+// it). A user has at most one, which the unique index on the pair enforces.
+func (r *Repository) GetByUserPhone(ctx context.Context, userID, phoneNumber string) (models.PhoneNumber, error) {
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM phone_numbers
+		WHERE user_id = $1 AND phone_number = $2
+	`, returningColumns)
+
+	row, err := scanPhoneNumber(r.db.QueryRow(ctx, query, userID, strings.TrimSpace(phoneNumber)))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.PhoneNumber{}, ErrNotFound
+		}
+		return models.PhoneNumber{}, fmt.Errorf("get phone number by number: %w", err)
+	}
+	return row, nil
+}
+
 // SetQRCode stores the latest renderable QR data URL for a pending login.
 func (r *Repository) SetQRCode(ctx context.Context, userID, phoneNumberID, qrCode string) (models.PhoneNumber, error) {
 	const query = `
