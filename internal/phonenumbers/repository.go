@@ -126,6 +126,30 @@ func (r *Repository) ListConnected(ctx context.Context) ([]models.PhoneNumber, e
 	return out, nil
 }
 
+// ListWAJIDs returns the WhatsApp companion JID of every row that has one,
+// across all users and statuses: the set of linked devices the application
+// still accounts for.
+func (r *Repository) ListWAJIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.Query(ctx, `SELECT wa_jid FROM phone_numbers WHERE wa_jid IS NOT NULL AND wa_jid <> ''`)
+	if err != nil {
+		return nil, fmt.Errorf("list phone number WhatsApp JIDs: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]string, 0)
+	for rows.Next() {
+		var jid string
+		if err := rows.Scan(&jid); err != nil {
+			return nil, fmt.Errorf("scan phone number WhatsApp JID: %w", err)
+		}
+		out = append(out, jid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list phone number WhatsApp JIDs: %w", err)
+	}
+	return out, nil
+}
+
 // ListResumable returns every phone number that still has valid stored WhatsApp
 // credentials worth reconnecting on startup: both currently-connected rows and
 // rows that lost their live socket (disconnected).

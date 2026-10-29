@@ -139,6 +139,7 @@ type Manager struct {
 // concrete Postgres repository at the application boundary.
 type phoneNumberRepository interface {
 	ListResumable(context.Context) ([]models.PhoneNumber, error)
+	ListWAJIDs(context.Context) ([]string, error)
 	GetByUser(context.Context, string, string) (models.PhoneNumber, error)
 	CreatePaired(context.Context, string, string, *string, *string, string) (models.PhoneNumber, error)
 	SetQRCode(context.Context, string, string, string) (models.PhoneNumber, error)
@@ -275,9 +276,12 @@ type loginSession struct {
 	// email names the user in this login's activity lines. qrShown is set when
 	// the login put a QR code on screen (a relink of a paired device does not),
 	// and only those logins log an outcome, once (outcomeOnce). attempt ties
-	// that start and outcome to one qr_scan_attempts row.
+	// that start and outcome to one qr_scan_attempts row. qrShownAt is when
+	// the first code went up, which tells codes running out from WhatsApp
+	// closing the connection early.
 	email       string
 	qrShown     bool
+	qrShownAt   time.Time
 	attempt     *activity.QRAttempt
 	outcomeOnce sync.Once
 
@@ -285,6 +289,8 @@ type loginSession struct {
 	// and the Connected that follows it on separate goroutines; without it both
 	// can see the draft pending and insert the row twice.
 	persistMu sync.Mutex
+	// pairOnce runs recordPairing once per login (see there).
+	pairOnce sync.Once
 
 	firstQR     chan struct{}
 	firstQROnce sync.Once
@@ -679,6 +685,12 @@ func (m *Manager) DiscardDraft(userID, phoneNumberID string) bool {
 	if m == nil {
 		return false
 	}
+	// A scan that has already paired is not unscanned any more: its number is
+	// being written, and ending the session now would leave the device linked
+	// on the phone with no number behind it.
+	if session := m.getSession(phoneNumberID); session != nil && session.paired() {
+		return false
+	}
 	m.draftMu.Lock()
 	draft := m.drafts[phoneNumberID]
 	if draft != nil && draft.snapshot().UserID == userID {
@@ -938,6 +950,7 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 			return row, fmt.Errorf("create QR channel: %w", err)
 		}
 		session.qrShown = true
+		session.qrShownAt = time.Now()
 		session.attempt = &activity.QRAttempt{
 			ID:            uuid.NewString(),
 			PhoneNumberID: row.ID,
@@ -1604,6 +1617,14 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 			// Connected will follow after the post-pairing reconnect.
 		case "timeout":
 			log.Printf("whatsapp login: QR session expired phone_number_id=%s", session.phoneNumberID)
+			if session.paired() {
+				// WhatsApp dropped the socket while the scan was pairing, after the
+				// device was saved. The phone already lists it as linked, so the
+				// login becomes a number; whatsmeow reconnects the saved device.
+				log.Printf("whatsapp login: QR channel ended on a paired device; recording it phone_number_id=%s", session.phoneNumberID)
+				m.recordPairing(session, *session.client.Store.ID)
+				continue
+			}
 			if session.isClosing() {
 				// Whoever closed this session owns what the row says next — a
 				// restart on the same row has already put it back in pending_qr,
@@ -1612,11 +1633,7 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 				m.finishSession(session, true)
 				continue
 			}
-			if session.byCode() {
-				session.logScanFailed("the pairing code expired before it was entered")
-			} else {
-				session.logScanFailed("the QR code expired before it was scanned")
-			}
+			session.logScanFailed(qrTimeoutReason(session.byCode(), time.Since(session.qrShownAt)))
 			if err := m.markSessionDropped(session); err != nil {
 				log.Printf("whatsapp login: mark expired failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 			}
@@ -1626,6 +1643,11 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 				log.Printf("whatsapp login: QR pairing error for phone_number_id=%s: %v", session.phoneNumberID, item.Error)
 			} else {
 				log.Printf("whatsapp login: QR pairing ended for phone_number_id=%s event=%s reason=%s", session.phoneNumberID, item.Event, qrChannelFailureReason(item))
+			}
+			if session.paired() && item.Event != whatsmeow.QRChannelEventError {
+				log.Printf("whatsapp login: QR channel ended on a paired device; recording it phone_number_id=%s", session.phoneNumberID)
+				m.recordPairing(session, *session.client.Store.ID)
+				continue
 			}
 			if session.isClosing() {
 				// Same as the timeout case: the closer owns the row's next
@@ -1643,28 +1665,74 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 	}
 }
 
+// qrCodesLifetime is how long whatsmeow keeps a login's codes coming: 60s for
+// the first, then five more of 20s.
+const qrCodesLifetime = 160 * time.Second
+
+// qrTimeoutReason words a QR channel "timeout" for the activity log. whatsmeow
+// reports both its codes running out and WhatsApp dropping the socket that way,
+// so the time the login lasted is what tells them apart.
+func qrTimeoutReason(byCode bool, lasted time.Duration) string {
+	if lasted < qrCodesLifetime-10*time.Second {
+		return "WhatsApp closed the connection before the code was used"
+	}
+	if byCode {
+		return "the pairing code expired before it was entered"
+	}
+	return "the QR code expired before it was scanned"
+}
+
+// recordPairing turns a login whose scan paired a device into a phone number,
+// once, from whichever reports the pairing first: the PairSuccess event, or the
+// QR channel ending on a session whose device is already saved (see
+// consumeQRChannel).
+//
+// whatsmeow has already saved the device by then, so the phone shows it linked.
+// The number is recorded now rather than on the Connected that follows the
+// post-pairing reconnect: a restart or a failed reconnect in between would
+// otherwise leave a linked device with no phone_numbers row and the page stuck
+// on its QR code.
+func (m *Manager) recordPairing(session *loginSession, jid types.JID) {
+	session.pairOnce.Do(func() {
+		if err := m.markSessionConnected(session, jid.String(), phoneNumberFromJID(jid)); err != nil {
+			log.Printf("whatsapp login: record paired number failed for phone_number_id=%s: %v", session.phoneNumberID, err)
+			session.logScanFailed(scanFailureReason(err))
+			if session.draft.pending() {
+				_ = m.markSessionDropped(session)
+				if isUniqueViolation(err) {
+					go m.unlinkUnrecordedPairing(session)
+				}
+			}
+			return
+		}
+		session.logScanOutcome(activity.QRScanWorked, "+"+jid.User,
+			fmt.Sprintf("QR scan worked: %s linked WhatsApp number +%s", session.email, jid.User))
+		if session.isClosing() {
+			// The session was torn down while the pairing was landing. The number
+			// is real and its device is stored, so it is kept, as disconnected:
+			// reconnecting it from the dashboard or the next restart's resume
+			// brings it up without another scan.
+			_ = m.markSessionDropped(session)
+			return
+		}
+		go m.ensureConnectedAfterPair(session)
+	})
+}
+
+// paired reports that this session's scan has paired a device: whatsmeow sets
+// the store's ID just before saving it. From then on the phone lists the
+// device as linked, so the login must end as a number, never be thrown away.
+func (s *loginSession) paired() bool {
+	return s.client != nil && s.client.Store != nil && s.client.Store.ID != nil
+}
+
 func (m *Manager) handleEvent(session *loginSession, evt any) {
 	switch v := evt.(type) {
 	case *events.Message:
 		m.handleIncomingMessage(session, v)
 	case *events.PairSuccess:
-		// whatsmeow has already saved the device by the time this fires, so the
-		// phone shows it linked. Record the number now rather than waiting for
-		// the Connected that follows the post-pairing reconnect: a restart or a
-		// failed reconnect in between would otherwise leave a linked device with
-		// no phone_numbers row and the page stuck on its QR code.
 		log.Printf("whatsapp login: pair success phone_number_id=%s wa_jid=%s", session.phoneNumberID, v.ID.String())
-		if err := m.markSessionConnected(session, v.ID.String(), phoneNumberFromJID(v.ID)); err != nil {
-			log.Printf("whatsapp login: record paired number failed for phone_number_id=%s: %v", session.phoneNumberID, err)
-			session.logScanFailed(scanFailureReason(err))
-			if session.draft.pending() {
-				_ = m.markSessionDropped(session)
-			}
-			return
-		}
-		session.logScanOutcome(activity.QRScanWorked, "+"+v.ID.User,
-			fmt.Sprintf("QR scan worked: %s linked WhatsApp number +%s", session.email, v.ID.User))
-		go m.ensureConnectedAfterPair(session)
+		m.recordPairing(session, v.ID)
 	case *events.Connected:
 		waJID := clientJID(session.client)
 		log.Printf("whatsapp login [debug]: Connected event phone_number_id=%s wa_jid=%q logged_in=%t draft_pending=%t assign_agent_id=%q",
@@ -2312,11 +2380,35 @@ func (session *loginSession) logScanFailed(reason string) {
 // for the activity log. The one that happens in practice is a user rescanning a
 // number their account already has.
 func scanFailureReason(err error) string {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+	if isUniqueViolation(err) {
 		return "this number is already connected to their account"
 	}
 	return err.Error()
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// unlinkUnrecordedPairing unlinks a companion that paired but can never be
+// recorded, because the account already has that number. The phone lists it as
+// linked the moment it pairs, and left alone it holds one of the phone's four
+// linked-device slots for nothing. Logging out needs the connection back from
+// WhatsApp's post-pairing reconnect; one that never comes is left to the
+// orphan sweep.
+func (m *Manager) unlinkUnrecordedPairing(session *loginSession) {
+	if !session.client.WaitForConnection(30 * time.Second) {
+		m.finishSession(session, true)
+		return
+	}
+	if err := logoutClient(context.Background(), session.client); err != nil {
+		log.Printf("whatsapp login: unlink unrecorded pairing failed phone_number_id=%s: %v", session.phoneNumberID, err)
+		m.finishSession(session, true)
+		return
+	}
+	log.Printf("whatsapp login: unlinked a pairing for a number the account already has phone_number_id=%s", session.phoneNumberID)
+	m.finishSession(session, false)
 }
 
 func (m *Manager) storeSession(session *loginSession) {

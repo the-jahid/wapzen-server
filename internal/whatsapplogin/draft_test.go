@@ -5,6 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/types"
+
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -160,5 +164,32 @@ func TestDraftReportsHowLongItsQRCodeLasts(t *testing.T) {
 	draft.setStatus(models.PhoneNumberStatusDisconnected)
 	if row := draft.snapshot(); row.QRExpiresInMs != nil {
 		t.Fatalf("an ended login still reports %dms left on its code", *row.QRExpiresInMs)
+	}
+}
+
+// Once a scan pairs, the phone lists the device as linked. A new code request
+// or a closed card must not end that login, or the device is left linked with
+// no number behind it.
+func TestPairedLoginIsNotDiscarded(t *testing.T) {
+	m := newDraftManager()
+	draft := m.newTestDraft("user_123")
+	id := draft.snapshot().ID
+	jid := types.NewADJID("8801639726992", 0, 70)
+	m.storeSession(&loginSession{
+		phoneNumberID: id,
+		userID:        "user_123",
+		draft:         draft,
+		client:        &whatsmeow.Client{Store: &store.Device{ID: &jid}},
+	})
+
+	if m.DiscardDraft("user_123", id) {
+		t.Fatal("a login whose scan already paired was discarded")
+	}
+	m.endLiveDrafts("user_123")
+	if _, ok := m.Draft("user_123", id); !ok {
+		t.Fatal("starting a code login ended a login whose scan already paired")
+	}
+	if m.getSession(id) == nil {
+		t.Fatal("the paired login's session was torn down")
 	}
 }

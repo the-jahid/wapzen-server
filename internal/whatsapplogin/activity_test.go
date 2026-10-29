@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -49,5 +50,33 @@ func TestScanFailureReasonNamesDuplicateNumber(t *testing.T) {
 	}
 	if got := scanFailureReason(errors.New("boom")); got != "boom" {
 		t.Fatalf("scanFailureReason = %q", got)
+	}
+}
+
+func TestQRTimeoutReasonTellsEarlyDisconnectFromExpiry(t *testing.T) {
+	cases := []struct {
+		byCode bool
+		lasted time.Duration
+		want   string
+	}{
+		{false, 161 * time.Second, "the QR code expired before it was scanned"},
+		{true, 160 * time.Second, "the pairing code expired before it was entered"},
+		{false, 42 * time.Second, "WhatsApp closed the connection before the code was used"},
+		{true, 92 * time.Second, "WhatsApp closed the connection before the code was used"},
+	}
+	for _, tc := range cases {
+		if got := qrTimeoutReason(tc.byCode, tc.lasted); got != tc.want {
+			t.Errorf("qrTimeoutReason(%t, %s) = %q, want %q", tc.byCode, tc.lasted, got, tc.want)
+		}
+	}
+}
+
+func TestUniqueViolationIsRecognisedThroughWrapping(t *testing.T) {
+	err := fmt.Errorf("create paired phone number: %w", &pgconn.PgError{Code: "23505"})
+	if !isUniqueViolation(err) {
+		t.Fatal("want a wrapped 23505 recognised as a unique violation")
+	}
+	if isUniqueViolation(errors.New("connection reset")) {
+		t.Fatal("want a plain error not treated as a unique violation")
 	}
 }

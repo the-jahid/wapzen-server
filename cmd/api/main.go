@@ -143,6 +143,10 @@ func main() {
 	// restart, instead of sitting "connected" in the DB with no live client.
 	whatsAppLoginManager.ResumeSessions(ctx)
 
+	// Unlink companions no number accounts for: each one holds one of the
+	// phone's four linked-device slots, and a full phone refuses the next scan.
+	whatsAppLoginManager.SweepOrphanCompanions(ctx)
+
 	// Build the router with all middleware and routes.
 	router := routes.NewRouter(routes.Dependencies{
 		UsersRepo:                 usersRepo,
