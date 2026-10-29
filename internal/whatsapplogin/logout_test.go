@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types/events"
+
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -43,5 +46,41 @@ func TestDeleteLoggedOutPhoneNumberIsScopedToSessionNumber(t *testing.T) {
 	}
 	if _, ok := m.aiHistory["agent_1|phone_456|peer_1"]; !ok {
 		t.Fatal("another number's conversation history was deleted")
+	}
+}
+
+type markDisconnectedSpy struct {
+	phoneNumberRepository
+	calls int
+}
+
+func (s *markDisconnectedSpy) MarkDisconnected(context.Context, string, string) (models.PhoneNumber, error) {
+	s.calls++
+	return models.PhoneNumber{}, nil
+}
+
+// On a deploy the incoming instance replaces the outgoing one's stream after
+// it has already marked the number connected; the outgoing one must not
+// overwrite that with "disconnected".
+func TestStreamReplacedLeavesTheRowToTheNewConnection(t *testing.T) {
+	repo := &markDisconnectedSpy{}
+	m := &Manager{repo: repo, sessions: make(map[string]*loginSession)}
+	session := &loginSession{
+		userID:        "user_123",
+		phoneNumberID: "phone_123",
+		client:        &whatsmeow.Client{},
+		cancel:        func() {},
+		done:          make(chan struct{}),
+		connected:     true,
+	}
+	m.storeSession(session)
+
+	m.handleEvent(session, &events.StreamReplaced{})
+
+	if repo.calls != 0 {
+		t.Fatalf("stream replaced wrote disconnected %d time(s)", repo.calls)
+	}
+	if m.getSession("phone_123") != nil {
+		t.Fatal("the replaced session is still registered")
 	}
 }

@@ -147,6 +147,10 @@ func main() {
 	// phone's four linked-device slots, and a full phone refuses the next scan.
 	whatsAppLoginManager.SweepOrphanCompanions(ctx)
 
+	// Bring back any paired number a deploy's instance handover left with no
+	// live session here.
+	whatsAppLoginManager.KeepNumbersConnected(ctx)
+
 	// Build the router with all middleware and routes.
 	router := routes.NewRouter(routes.Dependencies{
 		UsersRepo:                 usersRepo,

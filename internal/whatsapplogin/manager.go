@@ -1795,11 +1795,12 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 		}
 		m.finishSession(session, false)
 	case *events.StreamReplaced:
-		if !session.isClosing() {
-			if err := m.markSessionDropped(session); err != nil {
-				log.Printf("whatsapp login: mark stream-replaced disconnected failed for phone_number_id=%s: %v", session.phoneNumberID, err)
-			}
-		}
+		// Only this server holds the device's credentials, so whatever replaced
+		// the stream is another instance of it — on a deploy, the incoming one
+		// taking over — and that connection reports its own state. Writing
+		// "disconnected" here would land after its "connected" and leave a live
+		// number looking dead.
+		log.Printf("whatsapp login: stream replaced by another connection phone_number_id=%s", session.phoneNumberID)
 		m.finishSession(session, false)
 	case *events.ClientOutdated:
 		m.markLifecycleFailure(session, "client outdated")
