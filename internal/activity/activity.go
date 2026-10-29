@@ -30,12 +30,24 @@ const (
 
 // Entry is one thing a user did. Message is the line printed to the log;
 // Detail is its variable part (a failure reason, a linked number), if any.
+//
+// QR scan entries also carry the attempt they belong to, so the store can keep
+// one qr_scan_attempts row per QR code shown alongside the log lines.
 type Entry struct {
 	UserID  string
 	Email   string
 	Event   Event
 	Message string
 	Detail  string
+	Attempt *QRAttempt
+}
+
+// QRAttempt identifies one QR login. ID is minted when the QR code is shown;
+// PhoneNumberID and AgentID are only read from the qr_scan_started entry.
+type QRAttempt struct {
+	ID            string
+	PhoneNumberID string
+	AgentID       string
 }
 
 // Store saves entries. The Repository in this package is the real one.

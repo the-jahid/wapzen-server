@@ -241,9 +241,11 @@ type loginSession struct {
 
 	// email names the user in this login's activity lines. qrShown is set when
 	// the login put a QR code on screen (a relink of a paired device does not),
-	// and only those logins log an outcome, once (outcomeOnce).
+	// and only those logins log an outcome, once (outcomeOnce). attempt ties
+	// that start and outcome to one qr_scan_attempts row.
 	email       string
 	qrShown     bool
+	attempt     *activity.QRAttempt
 	outcomeOnce sync.Once
 
 	// persistMu serializes markSessionConnected, which runs from both PairSuccess
@@ -819,11 +821,13 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 			return row, fmt.Errorf("create QR channel: %w", err)
 		}
 		session.qrShown = true
+		session.attempt = &activity.QRAttempt{ID: uuid.NewString(), PhoneNumberID: row.ID, AgentID: assignAgentID}
 		m.storeSession(session)
 		activity.Log(activity.Entry{
 			UserID:  userID,
 			Email:   session.email,
 			Event:   activity.QRScanStarted,
+			Attempt: session.attempt,
 			Message: fmt.Sprintf("QR scan started: %s was shown a QR code to link a WhatsApp number", session.email),
 		})
 		go m.consumeQRChannel(session, qrChan)
@@ -2158,6 +2162,7 @@ func (session *loginSession) logScanOutcome(event activity.Event, detail, messag
 			Event:   event,
 			Message: message,
 			Detail:  detail,
+			Attempt: session.attempt,
 		})
 	})
 }
