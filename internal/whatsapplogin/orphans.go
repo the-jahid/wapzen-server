@@ -85,6 +85,35 @@ func (m *Manager) sweepOrphanCompanions(ctx context.Context) {
 	}
 }
 
+// unlinkEarlierCompanions keeps a number to the one device just paired for it:
+// once that pairing has settled, every older companion of the same phone that
+// no row names and no session uses is unlinked, instead of holding one of the
+// phone's four slots until the next sweep. Only older ones (lower device
+// numbers), so a scan of the same phone pairing in parallel is never touched.
+func (m *Manager) unlinkEarlierCompanions(paired types.JID) {
+	if m.container == nil {
+		return
+	}
+	time.Sleep(orphanConfirmWait)
+	ctx := context.Background()
+	orphans, err := m.orphanCompanions(ctx)
+	if err != nil {
+		log.Printf("whatsapp orphans: list failed: %v", err)
+		return
+	}
+	for jid, device := range orphans {
+		if device.ID.User != paired.User || device.ID.Device >= paired.Device {
+			continue
+		}
+		client := whatsmeow.NewClient(device, newWhatsAppLogger("", ""))
+		if err := connectAndLogout(ctx, client); err != nil {
+			log.Printf("whatsapp orphans: unlink failed wa_jid=%s: %v", jid, err)
+			continue
+		}
+		activity.Printf("unlinked an older WhatsApp linked device of +%s after a new scan: %s", paired.User, jid)
+	}
+}
+
 // orphanCompanions returns the stored companions, by JID, that no
 // phone_numbers row names and no live session in this process is using.
 func (m *Manager) orphanCompanions(ctx context.Context) (map[string]*store.Device, error) {

@@ -1725,6 +1725,7 @@ func (m *Manager) recordPairing(session *loginSession, jid types.JID) {
 		}
 		session.logScanOutcome(activity.QRScanWorked, "+"+jid.User,
 			fmt.Sprintf("QR scan worked: %s linked WhatsApp number +%s", session.email, jid.User))
+		go m.unlinkEarlierCompanions(jid)
 		if duplicate {
 			go m.handOverRelinkedNumber(session, relinked)
 			return
