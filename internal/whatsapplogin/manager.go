@@ -2365,8 +2365,21 @@ func (s *loginSession) isClosing() bool {
 	return s.closing
 }
 
+// qrPixelsPerModule renders each QR module as a whole block of pixels. A fixed
+// pixel size (280px) left 4px modules that every page then scaled down by a
+// fractional factor, and the browser's smoothing blurred the module edges into
+// grey that phone cameras failed to lock on to.
+const qrPixelsPerModule = 10
+
+// qrDataURL renders a pairing code the way WhatsApp Web does: Low error
+// correction, which a code on a screen never needs more of, keeps the symbol a
+// version smaller (57 modules, not 61), so each module is bigger at any size.
 func qrDataURL(raw string) (string, error) {
-	png, err := qrcode.Encode(raw, qrcode.Medium, 280)
+	code, err := qrcode.New(raw, qrcode.Low)
+	if err != nil {
+		return "", err
+	}
+	png, err := code.PNG(-qrPixelsPerModule)
 	if err != nil {
 		return "", err
 	}
