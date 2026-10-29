@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"whatsapp-ai-caller-server/internal/activity"
 	"whatsapp-ai-caller-server/internal/agents"
 	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/auth"
@@ -50,31 +51,42 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	// Tee logs to a file for offline debugging.
-	// Must run before any component logger is built.
+	logOutput := io.Writer(os.Stderr)
 	if logFile, err := os.OpenFile("tmp/server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
-		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+		logOutput = io.MultiWriter(os.Stderr, logFile)
 		defer logFile.Close()
-	} else {
-		log.Printf("could not open tmp/server.log for log tee: %v", err)
 	}
+	log.SetOutput(logOutput)
 
 	// Load configuration from .env / environment variables.
 	cfg := config.Load()
+
+	// User activity (sign-ins, QR scans) is always logged. Everything else —
+	// every request, whatsmeow's internals — only with VERBOSE_LOGS=true. This
+	// must run before any component logger is built, since whatsmeow's loggers
+	// keep whatever writer the standard logger had when they were made.
+	activity.SetOutput(logOutput)
+	if !cfg.VerboseLogs {
+		log.SetOutput(io.Discard)
+	}
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
 	pool, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("database connection failed: %v", err)
+		fatalf("database connection failed: %v", err)
 	}
 	defer pool.Close()
 
 	if err := db.Migrate(cfg.DatabaseURL); err != nil {
-		log.Fatalf("database migration failed: %v", err)
+		fatalf("database migration failed: %v", err)
 	}
 
+	// Save each activity line under its user too (the activity_logs table).
+	activity.UseStore(activity.NewRepository(pool))
+
 	if err := auth.Init(cfg.ClerkSecretKey); err != nil {
-		log.Fatalf("clerk configuration failed: %v", err)
+		fatalf("clerk configuration failed: %v", err)
 	}
 
 	agentsRepo := agents.NewRepository(pool)
@@ -119,7 +131,7 @@ func main() {
 
 	whatsAppLoginManager, err := whatsapplogin.NewManager(ctx, cfg.DatabaseURL, phoneNumbersRepo, agentsRepo, chatAgentsRepo, callsRepo, knowledgeBaseRetriever)
 	if err != nil {
-		log.Fatalf("WhatsApp login manager failed: %v", err)
+		fatalf("WhatsApp login manager failed: %v", err)
 	}
 	defer whatsAppLoginManager.Close()
 
@@ -148,6 +160,7 @@ func main() {
 		ClerkWebhookSigningSecret: cfg.ClerkWebhookSigningSecret,
 		ElevenLabsAPIKey:          cfg.ElevenLabsAPIKey,
 		CORSAllowedOrigins:        cfg.CORSAllowedOrigins,
+		VerboseLogs:               cfg.VerboseLogs,
 	})
 
 	addr := ":" + cfg.Port
@@ -155,6 +168,7 @@ func main() {
 	log.Printf("WhatsApp AI Caller server starting in %q mode", cfg.AppEnv)
 	log.Printf("Listening on   http://localhost%s", addr)
 	log.Printf("Swagger UI at  http://localhost%s/swagger/index.html", addr)
+	activity.Printf("server started")
 
 	server := &http.Server{Addr: addr, Handler: router}
 	go func() {
@@ -167,6 +181,13 @@ func main() {
 	}()
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("server failed to start: %v", err)
+		activity.Printf("server failed to start: %v", err)
 	}
+}
+
+// fatalf stops the server on a startup failure. It writes through the activity
+// log, which is never silenced, so the reason shows up whatever VERBOSE_LOGS is.
+func fatalf(format string, args ...any) {
+	activity.Printf(format, args...)
+	os.Exit(1)
 }

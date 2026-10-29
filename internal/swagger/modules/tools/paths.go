@@ -214,5 +214,33 @@ func toolPaths() oas.Object {
 			"patch":  updateToolOperation(),
 			"delete": deleteToolOperation(),
 		},
+		item + "/test": oas.Object{
+			"post": testToolOperation(),
+		},
+	}
+}
+
+func testToolOperation() oas.Object {
+	return oas.Object{
+		"tags":        []any{tagName},
+		"operationId": "testTool",
+		"summary":     "Test Tool",
+		"description": "Sends an api_request tool's HTTP request once, with the arguments supplied, exactly as an agent " +
+			"would mid-conversation, and returns the request sent, the status, the response body and the text the " +
+			"agent would have read as the result. Supply api_request to test an unsaved configuration in place of " +
+			"the stored one. Only api_request tools can be tested. The request really is sent, so a tool that " +
+			"writes data writes it.",
+		"security":    apiKeySecurity(),
+		"parameters":  []any{toolIDParam()},
+		"requestBody": requestBody("The arguments to call the tool with.", "TestToolRequest", testToolRequestExample()),
+		"responses": oas.Object{
+			"200": okJSON("The test ran. A failed request is still a 200: data.ok and data.error say how it went.",
+				"TestToolResponse", testToolResponseExample()),
+			"400": errJSON("The tool is not an api_request tool, or the supplied api_request is invalid.",
+				errorExample("Validation failed", fieldError("type", "only api_request tools send a request that can be tested"))),
+			"401": resp401(),
+			"404": resp404(),
+			"500": resp500(),
+		},
 	}
 }

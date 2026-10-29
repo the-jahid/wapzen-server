@@ -27,6 +27,7 @@ type Config struct {
 	OpenAIAPIKey              string   // OpenAI API key used by voice call providers.
 	ElevenLabsAPIKey          string   // ElevenLabs API key used by voice call providers.
 	CORSAllowedOrigins        []string // Browser origins allowed to call the API (comma-separated CORS_ALLOWED_ORIGINS); empty means https://wapzen.io.
+	VerboseLogs               bool     // VERBOSE_LOGS=true prints diagnostic logs (every request, WhatsApp internals); otherwise only user activity is logged.
 
 	// Knowledge base indexing. The embedding model and the Pinecone index must
 	// agree on a vector width, so one dimension drives both: it is requested from
@@ -58,12 +59,23 @@ func Load() *Config {
 		OpenAIAPIKey:              openAIAPIKey,
 		ElevenLabsAPIKey:          getEnv("ELEVENLABS_API_KEY", ""),
 		CORSAllowedOrigins:        getEnvList("CORS_ALLOWED_ORIGINS"),
+		VerboseLogs:               getEnvBool("VERBOSE_LOGS"),
 		OpenAIEmbeddingModel:      getEnv("OPENAI_EMBEDDING_MODEL", embeddings.DefaultModel),
 		PineconeAPIKey:            strings.TrimSpace(getEnv("PINECONE_API_KEY", "")),
 		PineconeIndexName:         getEnv("PINECONE_INDEX_NAME", ""),
 		PineconeIndexHost:         strings.TrimSpace(getEnv("PINECONE_INDEX_HOST", "")),
 		PineconeIndexDimension:    getEnvInt("PINECONE_INDEX_DIMENSION", defaultPineconeIndexDimension),
 	}
+}
+
+// getEnvBool reports whether an environment variable is set to a true value
+// ("true", "1", "yes"); anything else, including unset, is false.
+func getEnvBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // getEnv returns the value of an environment variable, or a fallback if the

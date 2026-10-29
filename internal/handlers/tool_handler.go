@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"whatsapp-ai-caller-server/internal/agenttools"
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/swagger/modules/agents/types"
 	"whatsapp-ai-caller-server/internal/tools"
@@ -393,6 +395,99 @@ func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Tool deleted successfully",
 		Data:    toolDeleteData{ID: toolID, Deleted: true},
+	})
+}
+
+// toolTestRequest is the body of a test run. APIRequest is optional: when sent,
+// it is tested in place of the stored configuration, so an edit can be tried
+// before it is saved.
+type toolTestRequest struct {
+	Arguments  map[string]any               `json:"arguments"`
+	APIRequest *models.ToolAPIRequestConfig `json:"api_request"`
+}
+
+type toolTestEnvelope struct {
+	Success bool                  `json:"success"`
+	Message string                `json:"message"`
+	Data    agenttools.TestResult `json:"data"`
+}
+
+// Test runs an api_request tool once and reports the exchange.
+//
+// Test godoc
+// @Summary      Test Tool
+// @Description  Sends an api_request tool's HTTP request once, with the arguments supplied, exactly as an agent would mid-conversation, and returns the request sent, the status, the response body and the text the agent would have read as the result. Supply api_request to test an unsaved configuration in place of the stored one. Only api_request tools can be tested. The request really is sent, so a tool that writes data writes it.
+// @Tags         Tools
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        tool_id  path      string                    true  "Tool id"
+// @Param        body     body      handlers.toolTestRequest  true  "The arguments to call the tool with"
+// @Success      200      {object}  handlers.toolTestEnvelope
+// @Failure      400      {object}  types.ErrorEnvelope
+// @Failure      401      {object}  models.APIResponse
+// @Failure      404      {object}  models.APIResponse
+// @Failure      500      {object}  models.APIResponse
+// @Router       /v1/tools/{tool_id}/test [post]
+func (h *ToolHandler) Test(w http.ResponseWriter, r *http.Request) {
+	user, ok := currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	var req toolTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Invalid request body",
+		})
+		return
+	}
+
+	toolID := strings.TrimSpace(chi.URLParam(r, "tool_id"))
+	tool, err := h.repo.GetByUser(r.Context(), user.ID, toolID)
+	if err != nil {
+		h.writeLookupError(w, err, "failed to test tool")
+		return
+	}
+	if tool.Type != models.ToolTypeAPIRequest {
+		writeJSON(w, http.StatusBadRequest, types.ErrorEnvelope{
+			Success: false,
+			Message: "Validation failed",
+			Errors: []types.FieldError{{
+				Field:   "type",
+				Message: "only api_request tools send a request that can be tested",
+			}},
+		})
+		return
+	}
+
+	cfg := tool.APIRequest
+	if req.APIRequest != nil {
+		if errs := validateAPIRequestConfig(*req.APIRequest); len(errs) > 0 {
+			writeJSON(w, http.StatusBadRequest, types.ErrorEnvelope{
+				Success: false,
+				Message: "Validation failed",
+				Errors:  errs,
+			})
+			return
+		}
+		cfg = normalizedAPIRequest(req.APIRequest)
+	}
+	args := req.Arguments
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	runner := agenttools.NewRunner("tool test: user " + user.ID)
+	result := runner.TestAPIRequest(r.Context(), models.AgentTool{
+		ID: tool.ID, Type: tool.Type, Name: tool.Name, Description: tool.Description, APIRequest: cfg,
+	}, args)
+
+	writeJSON(w, http.StatusOK, toolTestEnvelope{
+		Success: true,
+		Message: "Tool test completed",
+		Data:    result,
 	})
 }
 

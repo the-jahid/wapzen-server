@@ -170,8 +170,7 @@ func (r *Runner) RunAPIRequest(ctx context.Context, tool models.AgentTool, args 
 	}
 
 	if missing := MissingRequired(cfg.Parameters, args); len(missing) > 0 {
-		return fmt.Sprintf("Missing required argument(s): %s. Ask for them, then call the tool again.",
-			strings.Join(missing, ", "))
+		return missingResult(missing)
 	}
 
 	request, err := BuildRequest(ctx, cfg, args)
@@ -215,7 +214,18 @@ func (r *Runner) RunAPIRequest(ctx context.Context, tool models.AgentTool, args 
 	}
 	log.Printf("%s tool %s %s %s returned %d in %dms",
 		r.label, tool.Name, cfg.Method, redactedURL(cfg.URL), status, elapsed)
+	return resultForModel(status, body)
+}
 
+// missingResult is what the model reads when it left a required argument out;
+// it is what sends the agent back to ask for it.
+func missingResult(missing []string) string {
+	return fmt.Sprintf("Missing required argument(s): %s. Ask for them, then call the tool again.",
+		strings.Join(missing, ", "))
+}
+
+// resultForModel renders a completed request as the text the model reads.
+func resultForModel(status int, body string) string {
 	if status >= 400 {
 		// The status is worth handing over — a 404 is "no such booking", which the
 		// agent can say — but the body of an error page is not, and repeating one

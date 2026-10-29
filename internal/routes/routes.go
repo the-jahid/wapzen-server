@@ -38,6 +38,9 @@ type Dependencies struct {
 	ClerkWebhookSigningSecret string
 	ElevenLabsAPIKey          string
 	CORSAllowedOrigins        []string
+	// VerboseLogs adds a log line for every request. Off, the log carries only
+	// user activity (see the activity package).
+	VerboseLogs bool
 }
 
 // NewRouter builds the chi router with all middleware and routes registered.
@@ -82,7 +85,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	// Built-in chi middleware.
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
-	r.Use(chimiddleware.Logger)
+	if deps.VerboseLogs {
+		r.Use(chimiddleware.Logger)
+	}
 	r.Use(chimiddleware.Recoverer)
 
 	// Custom CORS middleware.
@@ -183,6 +188,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Get("/v1/dashboard/tools/{tool_id}", toolHandler.Get)
 		r.Patch("/v1/dashboard/tools/{tool_id}", toolHandler.Update)
 		r.Delete("/v1/dashboard/tools/{tool_id}", toolHandler.Delete)
+		r.Post("/v1/dashboard/tools/{tool_id}/test", toolHandler.Test)
 
 		// Dashboard outbound campaigns, sharing the handlers with the API-key
 		// /v1/outbound-campaigns routes below.
@@ -260,6 +266,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Get("/v1/tools/{tool_id}", toolHandler.Get)
 		r.Patch("/v1/tools/{tool_id}", toolHandler.Update)
 		r.Delete("/v1/tools/{tool_id}", toolHandler.Delete)
+		r.Post("/v1/tools/{tool_id}/test", toolHandler.Test)
 
 		// Outbound campaigns. Every operation is scoped to the authenticated API
 		// key owner. A campaign records the batch and its counters, and adding a

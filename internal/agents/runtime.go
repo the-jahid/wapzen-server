@@ -25,6 +25,9 @@ type InboundAgent struct {
 	ModelTemperature float64
 	SystemPrompt     string
 	Language         string
+	// Timezone is the IANA zone the agent's conversations are dated in, or ""
+	// to take it from the country of the number it answers on.
+	Timezone string
 
 	// BeginMessageMode is one of the constants.BeginMessageModeOptions values:
 	// "agent_speaks_first" (speak WelcomeMessage verbatim), "agent_waits_for_user"
@@ -77,7 +80,7 @@ func (r *Repository) LiveOutboundAgentForPhoneNumber(ctx context.Context, phoneN
 func (r *Repository) liveAgentForPhoneNumber(ctx context.Context, phoneNumberID, direction string) (*InboundAgent, error) {
 	const q = `
 		SELECT id, model_provider, model_name, model_temperature,
-			prompt_system_prompt, language,
+			prompt_system_prompt, language, timezone,
 			prompt_begin_message_mode, prompt_begin_message, prompt_begin_message_delay_ms,
 			transcriber_provider, transcriber_openai_model, transcriber_elevenlabs_model,
 			voice_provider, voice_elevenlabs_voice_id, voice_elevenlabs_voice_model,
@@ -95,10 +98,11 @@ func (r *Repository) liveAgentForPhoneNumber(ctx context.Context, phoneNumberID,
 		welcomeMessage      *string
 		welcomeDelayMs      *int
 		voiceOpenAIInstruct *string
+		timezone            *string
 	)
 	err := r.pool.QueryRow(ctx, q, phoneNumberID, direction).Scan(
 		&agent.ID, &agent.ModelProvider, &agent.ModelName, &agent.ModelTemperature,
-		&systemPrompt, &agent.Language,
+		&systemPrompt, &agent.Language, &timezone,
 		&agent.BeginMessageMode, &welcomeMessage, &welcomeDelayMs,
 		&agent.TranscriberProvider, &agent.TranscriberOpenAIModel, &agent.TranscriberElevenLabsModel,
 		&agent.VoiceProvider, &agent.VoiceElevenLabsVoiceID, &agent.VoiceElevenLabsModel,
@@ -115,6 +119,7 @@ func (r *Repository) liveAgentForPhoneNumber(ctx context.Context, phoneNumberID,
 	agent.WelcomeMessage = deref(welcomeMessage)
 	agent.WelcomeDelayMs = deref(welcomeDelayMs)
 	agent.VoiceOpenAIInstructions = deref(voiceOpenAIInstruct)
+	agent.Timezone = deref(timezone)
 	return &agent, nil
 }
 

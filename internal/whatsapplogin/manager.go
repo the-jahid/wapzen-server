@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/purpshell/meowcaller"
 	"github.com/rs/zerolog"
@@ -28,7 +29,9 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
+	"whatsapp-ai-caller-server/internal/activity"
 	"whatsapp-ai-caller-server/internal/agents"
+	"whatsapp-ai-caller-server/internal/agenttools"
 	"whatsapp-ai-caller-server/internal/chatagents"
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/phonenumbers"
@@ -236,6 +239,13 @@ type loginSession struct {
 	// every resumed session.
 	draft *draftLogin
 
+	// email names the user in this login's activity lines. qrShown is set when
+	// the login put a QR code on screen (a relink of a paired device does not),
+	// and only those logins log an outcome, once (outcomeOnce).
+	email       string
+	qrShown     bool
+	outcomeOnce sync.Once
+
 	// persistMu serializes markSessionConnected, which runs from both PairSuccess
 	// and the Connected that follows it on separate goroutines; without it both
 	// can see the draft pending and insert the row twice.
@@ -422,6 +432,7 @@ func (m *Manager) resumeSession(ctx context.Context, row models.PhoneNumber) err
 	m.attachInbound(context.Background(), session, client)
 
 	if err := client.Connect(); err != nil {
+		session.logScanFailed("could not reach WhatsApp: " + err.Error())
 		m.finishSession(session, true)
 		return fmt.Errorf("connect stored WhatsApp client: %w", err)
 	}
@@ -561,6 +572,8 @@ func (m *Manager) DiscardDraft(userID, phoneNumberID string) bool {
 		return false
 	}
 	if session := m.getSession(phoneNumberID); session != nil {
+		session.logScanOutcome(activity.QRScanCancelled, "",
+			fmt.Sprintf("QR scan cancelled: %s closed the QR code without scanning it", session.email))
 		m.finishSession(session, true)
 	}
 	log.Printf("whatsapp login: discarded unscanned QR login phone_number_id=%s", phoneNumberID)
@@ -780,6 +793,7 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 		cancel:        cancel,
 		assignAgentID: assignAgentID,
 		draft:         draft,
+		email:         activity.Email(ctx),
 		firstQR:       make(chan struct{}),
 		done:          make(chan struct{}),
 	}
@@ -804,7 +818,14 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 			}
 			return row, fmt.Errorf("create QR channel: %w", err)
 		}
+		session.qrShown = true
 		m.storeSession(session)
+		activity.Log(activity.Entry{
+			UserID:  userID,
+			Email:   session.email,
+			Event:   activity.QRScanStarted,
+			Message: fmt.Sprintf("QR scan started: %s was shown a QR code to link a WhatsApp number", session.email),
+		})
 		go m.consumeQRChannel(session, qrChan)
 	} else {
 		m.storeSession(session)
@@ -1008,6 +1029,11 @@ func (m *Manager) resolveCallAgent(ctx context.Context, userID, phoneNumberID, d
 		return nil, fmt.Errorf("%w: agent %s selected model provider %q, which is not configured on this server", ErrAgentUnavailable, agent.ID, agent.ModelProvider)
 	}
 	call := buildCallAgent(userID, phoneNumberID, agent)
+	// An agent with no prompt at all is left empty so voicecall's own default
+	// instructions still apply.
+	if call.Instructions != "" {
+		call.Instructions = withDateContext(call.Instructions, agenttools.Location(agent.Timezone, sessionPhone(m.getSession(phoneNumberID))))
+	}
 	call.KnowledgeBases = m.knowledgeBasesForCall(ctx, agent.ID)
 	call.Tools = m.toolsForCall(ctx, agent.ID)
 	call.SendMessage = m.messageSenderFor(phoneNumberID, userID)
@@ -1450,6 +1476,7 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 				m.finishSession(session, true)
 				continue
 			}
+			session.logScanFailed("the QR code expired before it was scanned")
 			if err := m.markSessionDropped(session); err != nil {
 				log.Printf("whatsapp login: mark expired failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 			}
@@ -1467,6 +1494,7 @@ func (m *Manager) consumeQRChannel(session *loginSession, qrChan <-chan whatsmeo
 				m.finishSession(session, true)
 				continue
 			}
+			session.logScanFailed(qrChannelFailureReason(item))
 			if err := m.markSessionDropped(session); err != nil {
 				log.Printf("whatsapp login: mark failed failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 			}
@@ -1488,11 +1516,14 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 		log.Printf("whatsapp login: pair success phone_number_id=%s wa_jid=%s", session.phoneNumberID, v.ID.String())
 		if err := m.markSessionConnected(session, v.ID.String(), phoneNumberFromJID(v.ID)); err != nil {
 			log.Printf("whatsapp login: record paired number failed for phone_number_id=%s: %v", session.phoneNumberID, err)
+			session.logScanFailed(scanFailureReason(err))
 			if session.draft.pending() {
 				_ = m.markSessionDropped(session)
 			}
 			return
 		}
+		session.logScanOutcome(activity.QRScanWorked, "+"+v.ID.User,
+			fmt.Sprintf("QR scan worked: %s linked WhatsApp number +%s", session.email, v.ID.User))
 		go m.ensureConnectedAfterPair(session)
 	case *events.Connected:
 		waJID := clientJID(session.client)
@@ -1525,6 +1556,7 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 			phoneNumberFromJID(session.client.Store.GetJID()),
 		); err != nil {
 			log.Printf("whatsapp login: mark connected failed for phone_number_id=%s: %v", session.phoneNumberID, err)
+			session.logScanFailed(scanFailureReason(err))
 			if session.draft.pending() {
 				// The scan landed but the number could not be recorded — most
 				// often because this account is already linked here. End the
@@ -1812,6 +1844,12 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 	}
 
 	chat := evt.Info.Chat
+	// Channel posts and status updates arrive as messages too, but nobody is
+	// waiting for an answer to them; replying would spend a model call per post
+	// and fill the conversation list with news feeds.
+	if chat.Server == types.NewsletterServer || chat.Server == types.BroadcastServer {
+		return
+	}
 	client := session.client
 	phoneNumberID := session.phoneNumberID
 	userID := session.userID
@@ -1860,6 +1898,7 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 		messages := m.chatHistory(historyKey)
 		m.addChatKnowledge(ctx, agent, chatKnowledgeSearchQuery(messages, text))
 		toolbox := m.chatToolbox(ctx, agent.ID, phoneNumberID, userID, chat)
+		agent.SystemPrompt = withDateContext(agent.SystemPrompt, agenttools.Location("", sessionPhone(session)))
 		messages = append(messages, aiMessage{Role: "user", Content: text})
 		reply, err := m.ai.Reply(ctx, *agent, messages, toolbox)
 		if err != nil {
@@ -2093,6 +2132,9 @@ func qrChannelFailureReason(item whatsmeow.QRChannelItem) string {
 }
 
 func (m *Manager) markLifecycleFailure(session *loginSession, reason string) {
+	if !session.isConnected() {
+		session.logScanFailed(reason)
+	}
 	if strings.TrimSpace(reason) != "" {
 		log.Printf("whatsapp login: lifecycle failure phone_number_id=%s reason=%s", session.phoneNumberID, reason)
 	}
@@ -2100,6 +2142,40 @@ func (m *Manager) markLifecycleFailure(session *loginSession, reason string) {
 		log.Printf("whatsapp login: mark lifecycle failed failed for phone_number_id=%s: %v", session.phoneNumberID, err)
 	}
 	m.finishSession(session, true)
+}
+
+// logScanOutcome records a QR login's outcome: at most one per login, and
+// only for a login that showed a QR code. PairSuccess and the Connected after
+// it report the same scan, so whichever lands first is the one logged.
+func (session *loginSession) logScanOutcome(event activity.Event, detail, message string) {
+	if !session.qrShown {
+		return
+	}
+	session.outcomeOnce.Do(func() {
+		activity.Log(activity.Entry{
+			UserID:  session.userID,
+			Email:   session.email,
+			Event:   event,
+			Message: message,
+			Detail:  detail,
+		})
+	})
+}
+
+func (session *loginSession) logScanFailed(reason string) {
+	session.logScanOutcome(activity.QRScanFailed, reason,
+		fmt.Sprintf("QR scan failed: %s tried to scan but it did not work (%s)", session.email, reason))
+}
+
+// scanFailureReason turns the error from recording a paired number into words
+// for the activity log. The one that happens in practice is a user rescanning a
+// number their account already has.
+func scanFailureReason(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return "this number is already connected to their account"
+	}
+	return err.Error()
 }
 
 func (m *Manager) storeSession(session *loginSession) {

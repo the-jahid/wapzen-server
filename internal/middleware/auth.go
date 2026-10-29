@@ -15,6 +15,7 @@ import (
 	clerkjwt "github.com/clerk/clerk-sdk-go/v2/jwt"
 	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
 
+	"whatsapp-ai-caller-server/internal/activity"
 	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/users"
@@ -112,7 +113,9 @@ func (a *Auth) RequireUser(next http.Handler) http.Handler {
 				return
 			}
 
+			activity.SeenUser(user.ID, user.Email)
 			ctx := context.WithValue(r.Context(), userContextKey{}, user)
+			ctx = activity.WithEmail(ctx, user.Email)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})).ServeHTTP(w, r)
 	})

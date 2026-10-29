@@ -241,5 +241,38 @@ func componentSchemas() oas.Object {
 		"ToolResponse":           toolResponseSchema(),
 		"ToolListResponse":       toolListResponseSchema(),
 		"ToolDeleteResponse":     toolDeleteResponseSchema(),
+		"TestToolRequest":        testToolRequestSchema(),
+		"TestToolResponse":       testToolResponseSchema(),
 	}
+}
+
+func testToolRequestSchema() oas.Object {
+	return oas.Obj().Desc("A test run of an api_request tool.").
+		P("arguments", oas.MapOf(oas.Object{}).Desc("The arguments to call the tool with, keyed by parameter "+
+			"name, exactly as the model would supply them.").
+			Example(oas.Object{"checkin": "20261029", "checkout": "20261030"})).
+		P("api_request", oas.Ref("ToolAPIRequestConfig")).
+		Build()
+}
+
+func testToolResponseSchema() oas.Object {
+	return oas.Obj().Desc("The outcome of a tool test run.").Req("success", "message", "data").
+		P("success", oas.Bool().Example(true)).
+		P("message", oas.Str().Example("Tool test completed")).
+		P("data", oas.Obj().Req("ok", "duration_ms", "body", "truncated", "model_result").
+			P("ok", oas.Bool().Desc("True when the endpoint answered with a status below 400.").Example(true)).
+			P("status_code", oas.Int().Desc("HTTP status the endpoint answered with; absent when it never answered.").Example(200)).
+			P("duration_ms", oas.Int().Desc("How long the request took.").Example(412)).
+			P("request", oas.Obj().Desc("The request as sent. Credential-looking header values are masked.").
+				P("method", oas.Str().Example("GET")).
+				P("url", oas.Str().Example("https://api.example.com/v1/availability?checkin=20261029")).
+				P("headers", oas.MapOf(oas.Str())).
+				P("body", oas.Str().Desc("The JSON body, on methods other than GET and DELETE."))).
+			P("content_type", oas.Str().Example("application/json")).
+			P("body", oas.Str().Desc("The response body, up to 20,000 characters.").Example(`{"available": true}`)).
+			P("truncated", oas.Bool().Desc("Whether body was cut at 20,000 characters.").Example(false)).
+			P("error", oas.Str().Desc("Why the request never got a status: a missing argument, a timeout, a refused address.")).
+			P("model_result", oas.Str().Desc("The text an agent would have read as this tool's result.").
+				Example("The request succeeded (status 200). Response:\n{\"available\": true}"))).
+		Build()
 }

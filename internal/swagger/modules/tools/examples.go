@@ -233,3 +233,28 @@ func internalErrorExample() oas.Object {
 		fieldError("server", "an unexpected error occurred; retry the request"),
 	)
 }
+
+func testToolRequestExample() oas.Object {
+	return oas.Object{"arguments": oas.Object{"checkin": "20261029", "checkout": "20261030"}}
+}
+
+func testToolResponseExample() oas.Object {
+	return oas.Object{
+		"success": true,
+		"message": "Tool test completed",
+		"data": oas.Object{
+			"ok":          true,
+			"status_code": 200,
+			"duration_ms": 412,
+			"request": oas.Object{
+				"method":  "GET",
+				"url":     "https://api.example.com/v1/availability?checkin=20261029&checkout=20261030",
+				"headers": oas.Object{"Accept": "application/json", "Authorization": "Bear••••56"},
+			},
+			"content_type": "application/json",
+			"body":         `{"available": true}`,
+			"truncated":    false,
+			"model_result": "The request succeeded (status 200). Response:\n{\"available\": true}",
+		},
+	}
+}
