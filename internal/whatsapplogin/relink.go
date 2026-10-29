@@ -52,6 +52,13 @@ func (m *Manager) relinkExistingNumber(session *loginSession, jid types.JID) (mo
 	session.draft.promote(row)
 	session.draft.end()
 
+	// Until the handover, the number's session is this login's: anything that
+	// looks the number up (a removal, the reconcile loop) finds it rather than
+	// taking the number for one with no session at all.
+	m.mu.Lock()
+	m.sessions[row.ID] = session
+	m.mu.Unlock()
+
 	// The agent whose editor started this login gets the number now, under the
 	// row's own id. Spending assignOnce here also keeps the Connected that
 	// follows from assigning the login's draft id, which names no row.
@@ -75,6 +82,11 @@ func (m *Manager) relinkExistingNumber(session *loginSession, jid types.JID) (mo
 func (m *Manager) handOverRelinkedNumber(session *loginSession, row models.PhoneNumber) {
 	session.client.WaitForConnection(30 * time.Second)
 	m.finishSession(session, true)
+	m.mu.Lock()
+	if m.sessions[row.ID] == session {
+		delete(m.sessions, row.ID)
+	}
+	m.mu.Unlock()
 	if err := m.resumeSession(context.Background(), row); err != nil {
 		log.Printf("whatsapp login: resume relinked phone_number_id=%s failed: %v", row.ID, err)
 	}

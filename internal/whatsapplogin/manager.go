@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -133,6 +134,10 @@ type Manager struct {
 	// draftMu guards drafts, the QR logins that have no phone_numbers row yet.
 	draftMu sync.Mutex
 	drafts  map[string]*draftLogin
+
+	// supersededUntil (unix nanoseconds) holds reconcileSessions off while
+	// another instance is taking this one's numbers (see StreamReplaced).
+	supersededUntil atomic.Int64
 }
 
 // phoneNumberRepository keeps the login lifecycle testable while retaining the
@@ -1818,6 +1823,7 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 		// "disconnected" here would land after its "connected" and leave a live
 		// number looking dead.
 		log.Printf("whatsapp login: stream replaced by another connection phone_number_id=%s", session.phoneNumberID)
+		m.supersededUntil.Store(time.Now().Add(supersededHold).UnixNano())
 		m.finishSession(session, false)
 	case *events.ClientOutdated:
 		m.markLifecycleFailure(session, "client outdated")
