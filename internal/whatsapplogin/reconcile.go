@@ -78,8 +78,11 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		}
 		if row.Status != models.PhoneNumberStatusConnected && !session.isClosing() &&
 			session.client.IsConnected() && session.client.IsLoggedIn() {
-			if _, err := m.repo.MarkConnected(ctx, row.UserID, row.ID, clientJID(session.client), nil); err != nil {
+			updated, err := m.repo.MarkConnected(ctx, row.UserID, row.ID, clientJID(session.client), nil)
+			if err != nil {
 				log.Printf("whatsapp reconcile: mark connected failed phone_number_id=%s: %v", row.ID, err)
+			} else {
+				session.noteConnectedAt(updated)
 			}
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -289,6 +290,27 @@ func (r *Repository) MarkExpired(ctx context.Context, userID, phoneNumberID stri
 
 func (r *Repository) MarkDisconnected(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {
 	return r.markStatus(ctx, userID, phoneNumberID, models.PhoneNumberStatusDisconnected)
+}
+
+// MarkDisconnectedIfLatest marks a connected number disconnected only while the
+// connection that dropped is still the latest one recorded for it: the row
+// names waJID and nothing has marked it connected since connectedAt. On a
+// deploy the incoming instance connects the number before the outgoing one
+// notices its socket is gone, and that newer "connected" must win. ErrNotFound
+// means the row was left alone.
+func (r *Repository) MarkDisconnectedIfLatest(ctx context.Context, userID, phoneNumberID, waJID string, connectedAt time.Time) (models.PhoneNumber, error) {
+	const query = `
+		UPDATE phone_numbers
+		SET status = $5, qr_code = NULL, updated_at = now()
+		WHERE id = $1 AND user_id = $2 AND wa_jid = $3
+			AND status = $6
+			AND last_connected_at <= $4
+		RETURNING id, user_id, phone_number, label, wa_jid, status, qr_code,
+			last_connected_at, created_at, updated_at
+	`
+
+	return r.scanUpdated(ctx, query, phoneNumberID, userID, waJID, connectedAt,
+		models.PhoneNumberStatusDisconnected, models.PhoneNumberStatusConnected)
 }
 
 // DeleteByUser permanently removes one phone number row owned by the

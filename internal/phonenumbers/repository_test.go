@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -106,6 +107,27 @@ func TestMarkDisconnectedScopesByAuthenticatedUser(t *testing.T) {
 	}
 	if got, want := db.args, []any{"phone_123", "user_123", "disconnected"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("args = %#v, want %#v", got, want)
+	}
+}
+
+// A deploy's outgoing instance must not mark disconnected a number the
+// incoming one has connected since, or one relinked onto another device.
+func TestMarkDisconnectedIfLatestLeavesNewerConnectionsAlone(t *testing.T) {
+	db := &recordingDB{}
+	repo := &Repository{db: db}
+	connectedAt := time.Date(2026, 10, 29, 18, 11, 0, 0, time.UTC)
+
+	_, err := repo.MarkDisconnectedIfLatest(context.Background(), "user_123", "phone_123", "15550001111:7@s.whatsapp.net", connectedAt)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	for _, guard := range []string{"user_id = $2", "wa_jid = $3", "last_connected_at <= $4", "status = $6"} {
+		if !strings.Contains(db.query, guard) {
+			t.Fatalf("query is missing %q: %s", guard, db.query)
+		}
+	}
+	if got := db.args; len(got) != 6 || got[2] != "15550001111:7@s.whatsapp.net" || got[3] != connectedAt || got[4] != "disconnected" || got[5] != "connected" {
+		t.Fatalf("args = %#v", got)
 	}
 }
 

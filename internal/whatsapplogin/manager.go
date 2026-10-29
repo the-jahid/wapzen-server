@@ -156,6 +156,7 @@ type phoneNumberRepository interface {
 	SetQRCode(context.Context, string, string, string) (models.PhoneNumber, error)
 	MarkConnected(context.Context, string, string, string, *string) (models.PhoneNumber, error)
 	MarkDisconnected(context.Context, string, string) (models.PhoneNumber, error)
+	MarkDisconnectedIfLatest(context.Context, string, string, string, time.Time) (models.PhoneNumber, error)
 	ResetPendingLogin(context.Context, string, string) (models.PhoneNumber, error)
 	ResetForRePair(context.Context, string, string) (models.PhoneNumber, error)
 	DeleteByUser(context.Context, string, string) (models.PhoneNumber, error)
@@ -312,6 +313,13 @@ type loginSession struct {
 	mu        sync.Mutex
 	connected bool
 	closing   bool
+	// connectedAt is the row's last_connected_at as this session last wrote
+	// it (database time). A later value on the row means another connection —
+	// the incoming instance of a deploy — has taken the number since.
+	connectedAt time.Time
+	// recovering is set while recoverDroppedSession is bringing a dropped
+	// connection back, so a second Disconnected does not start another.
+	recovering bool
 	// deviceJID is the device this session runs, kept here because whatsmeow
 	// clears client.Store.ID as it reports a LoggedOut — the one moment the
 	// session needs it, to delete only a row that still names this device.
@@ -944,6 +952,8 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 		return row, err
 	}
 	client := whatsmeow.NewClient(device, newWhatsAppLogger(userID, row.ID))
+	// recoverDroppedSession reconnects instead (see there).
+	client.EnableAutoReconnect = false
 	client.BackgroundEventCtx = sessionCtx
 
 	session := &loginSession{
@@ -1106,7 +1116,10 @@ func (m *Manager) markSessionConnected(session *loginSession, waJID string, phon
 			rowID = session.draft.snapshot().ID
 		}
 		log.Printf("whatsapp login [debug]: updating existing row to connected phone_number_id=%s user_id=%s wa_jid=%s", rowID, session.userID, waJID)
-		_, err := m.repo.MarkConnected(context.Background(), session.userID, rowID, waJID, phoneNumber)
+		row, err := m.repo.MarkConnected(context.Background(), session.userID, rowID, waJID, phoneNumber)
+		if err == nil {
+			session.noteConnectedAt(row)
+		}
 		return err
 	}
 
@@ -1124,6 +1137,7 @@ func (m *Manager) markSessionConnected(session *loginSession, waJID string, phon
 		return err
 	}
 	session.draft.promote(row)
+	session.noteConnectedAt(row)
 	m.dropDraft(row.ID)
 	log.Printf("whatsapp login: scan paired a device; phone number created phone_number_id=%s wa_jid=%s", row.ID, waJID)
 	return nil
@@ -1825,9 +1839,7 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 		m.assignPendingAgent(session)
 	case *events.Disconnected:
 		if session.isConnected() && !session.isClosing() {
-			if err := m.markSessionDropped(session); err != nil {
-				log.Printf("whatsapp login: mark disconnected failed for phone_number_id=%s: %v", session.phoneNumberID, err)
-			}
+			go m.recoverDroppedSession(session)
 		}
 	case *events.LoggedOut:
 		if !session.isClosing() {
@@ -2538,7 +2550,10 @@ func (m *Manager) clientFromStoredDevice(ctx context.Context, row models.PhoneNu
 		return nil, nil
 	}
 
-	return whatsmeow.NewClient(device, newWhatsAppLogger(row.UserID, row.ID)), nil
+	client := whatsmeow.NewClient(device, newWhatsAppLogger(row.UserID, row.ID))
+	// recoverDroppedSession reconnects instead (see there).
+	client.EnableAutoReconnect = false
+	return client, nil
 }
 
 func newWhatsAppLogger(userID, phoneNumberID string) waLog.Logger {
