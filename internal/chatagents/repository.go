@@ -26,10 +26,11 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-const chatAgentColumns = `
+var chatAgentColumns = `
 	id, created_at, updated_at,
 	agent_name, phone_number_id, status,
-	model_provider, model_name, model_temperature, prompt_system_prompt`
+	model_provider, model_name, model_temperature, prompt_system_prompt,
+	` + replyLimitReachedSQL
 
 // scanRow uses explicit time values instead of a reflection-based mapper so a
 // schema change cannot silently reshuffle the API resource.
@@ -40,6 +41,7 @@ func scanRow(scanner interface{ Scan(...any) error }) (Resource, error) {
 		&resource.Agent.Name, &resource.Agent.PhoneNumberID, &resource.Agent.Status,
 		&resource.Model.Provider, &resource.Model.Name, &resource.Model.Temperature,
 		&resource.Prompt.SystemPrompt,
+		&resource.ReplyLimitReached,
 	)
 	return resource, err
 }
@@ -74,6 +76,10 @@ func (r *Repository) Create(ctx context.Context, userID string, req CreateReques
 		return Resource{}, fmt.Errorf("begin chat agent create: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	if err := ensureCanCreate(ctx, tx, userID); err != nil {
+		return Resource{}, err
+	}
 
 	a := req.Agent
 	status := defaultString(a.Status, DefaultStatus)

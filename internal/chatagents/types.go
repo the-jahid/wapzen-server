@@ -76,6 +76,9 @@ type Resource struct {
 	Prompt        PromptSection     `json:"prompt"`
 	KnowledgeBase AttachmentSection `json:"knowledge_base"`
 	Tools         ToolSection       `json:"tools"`
+	// ReplyLimitReached is true once the agent, or the number it answers on, has
+	// sent all the replies it is allowed (see MaxRepliesPerAgent). Read-only.
+	ReplyLimitReached bool `json:"reply_limit_reached"`
 	// Runtime is filled by the handler from the running server, never stored.
 	Runtime *RuntimeSection `json:"runtime,omitempty"`
 }

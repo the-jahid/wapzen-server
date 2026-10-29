@@ -201,6 +201,11 @@ func (h *ChatAgentHandler) writeError(w http.ResponseWriter, err error, fallback
 	case errors.Is(err, chatagents.ErrKnowledgeBaseConflict):
 		writeJSON(w, http.StatusConflict, models.APIResponse{Success: false, Message: err.Error()})
 		return
+	case errors.Is(err, chatagents.ErrChatAgentLimit):
+		// The code lets the dashboard tell this apart from other refusals and
+		// offer to get in touch instead of just showing the message.
+		writeJSON(w, http.StatusForbidden, models.APIResponse{Success: false, Message: err.Error(), Data: map[string]string{"code": "chat_agent_limit"}})
+		return
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

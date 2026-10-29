@@ -33,4 +33,9 @@ type PhoneNumber struct {
 	// code, such as when the dashboard is open on the phone itself. It is only
 	// set on an unscanned login that asked for one, and is never stored.
 	PairingCode *string `json:"pairing_code,omitempty" example:"ABCD-EFGH"`
+	// PairingExpiresInMs is how long pairing_code can still be typed in, counted
+	// from when this response was built. The code lives as long as the login's
+	// socket, which WhatsApp closes about 160s after the login started. Only set
+	// alongside pairing_code.
+	PairingExpiresInMs *int64 `json:"pairing_expires_in_ms,omitempty" example:"140000"`
 }

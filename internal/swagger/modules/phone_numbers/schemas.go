@@ -50,6 +50,7 @@ func phoneNumberResourceSchema() oas.Object {
 		P("qr_code", qrCodeFieldSchema()).
 		P("qr_expires_in_ms", oas.Int().Desc("Milliseconds until qr_code stops being scannable, counted from when the response was built (WhatsApp gives the first code 60s, later ones 20s). Only present on an unscanned QR login.").Example(17000)).
 		P("pairing_code", oas.Str().Desc("8-character code to type into WhatsApp › Linked devices › Link with phone number instead. Only present on an unscanned login started with pairing_method phone_code.").Example("ABCD-EFGH")).
+		P("pairing_expires_in_ms", oas.Int().Desc("Milliseconds until pairing_code stops working, counted from when the response was built. The code lives as long as the login, which WhatsApp ends about 160s after it started. Only present alongside pairing_code.").Example(140000)).
 		P("last_connected_at", oas.Str().Format("date-time").Nullable().Desc("Most recent successful WhatsApp connection timestamp.").Example("2026-07-03T10:00:00Z")).
 		P("created_at", oas.Str().Format("date-time").Desc("Creation timestamp.").Example("2026-07-03T10:00:00Z")).
 		P("updated_at", oas.Str().Format("date-time").Desc("Last-update timestamp.").Example("2026-07-03T10:00:00Z")).

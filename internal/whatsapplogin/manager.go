@@ -186,6 +186,11 @@ type draftLogin struct {
 	// snapshot turns it into row.QRExpiresInMs.
 	qrExpiresAt time.Time
 
+	// codesEndAt is when WhatsApp closes the login socket: qrCodesLifetime after
+	// its first code arrived. A pairing code dies with the socket, so snapshot
+	// turns this into row.PairingExpiresInMs.
+	codesEndAt time.Time
+
 	// byCode marks a login the user links by typing a pairing code rather than
 	// scanning (see StartPhoneLogin). It is set when the draft is made and never
 	// changes, so it is read without the lock.
@@ -215,6 +220,10 @@ func (d *draftLogin) snapshot() models.PhoneNumber {
 		remaining := max(time.Until(d.qrExpiresAt).Milliseconds(), 0)
 		row.QRExpiresInMs = &remaining
 	}
+	if !d.codesEndAt.IsZero() && row.PairingCode != nil && row.Status == models.PhoneNumberStatusPendingQR {
+		remaining := max(time.Until(d.codesEndAt).Milliseconds(), 0)
+		row.PairingExpiresInMs = &remaining
+	}
 	return row
 }
 
@@ -232,6 +241,9 @@ func (d *draftLogin) setQRCode(qrCode string, expiresAt time.Time) {
 	defer d.mu.Unlock()
 	d.row.QRCode = &qrCode
 	d.qrExpiresAt = expiresAt
+	if d.codesEndAt.IsZero() {
+		d.codesEndAt = time.Now().Add(qrCodesLifetime)
+	}
 	d.row.Status = models.PhoneNumberStatusPendingQR
 	d.row.UpdatedAt = time.Now().UTC()
 }
@@ -2185,6 +2197,32 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 			m.recordChatTurn(turn, "")
 			return
 		}
+		// The reply is counted against the agent's and the number's allowance
+		// before the model is asked, and handed back below if it never goes out.
+		// Once either is used up the message is still saved, but not answered;
+		// the dashboard shows the agent as having reached its limit.
+		reserved, err := m.chatAgentsRepo.ReserveReply(ctx, agent.ID, phoneNumberID)
+		if err != nil {
+			log.Printf("whatsapp chat agent: reserve reply failed agent_id=%s phone_number_id=%s: %v", agent.ID, phoneNumberID, err)
+			m.recordChatTurn(turn, "")
+			return
+		}
+		if !reserved {
+			log.Printf("whatsapp chat agent: reply limit reached agent_id=%s phone_number_id=%s", agent.ID, phoneNumberID)
+			m.recordChatTurn(turn, "")
+			return
+		}
+		sent := false
+		defer func() {
+			if sent {
+				return
+			}
+			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), chatRecordTimeout)
+			defer releaseCancel()
+			if err := m.chatAgentsRepo.ReleaseReply(releaseCtx, agent.ID, phoneNumberID); err != nil {
+				log.Printf("whatsapp chat agent: release reply failed agent_id=%s phone_number_id=%s: %v", agent.ID, phoneNumberID, err)
+			}
+		}()
 		stopTyping := startChatTyping(ctx, client, chat, phoneNumberID)
 		defer stopTyping()
 
@@ -2216,6 +2254,7 @@ func (m *Manager) handleIncomingMessage(session *loginSession, evt *events.Messa
 			m.recordChatTurn(turn, "")
 			return
 		}
+		sent = true
 		m.appendChatHistory(historyKey, aiMessage{Role: "user", Content: text}, aiMessage{Role: "assistant", Content: reply})
 		m.chatFailures.Delete(agent.ID)
 		m.recordChatTurn(turn, reply)

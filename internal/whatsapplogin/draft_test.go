@@ -167,6 +167,30 @@ func TestDraftReportsHowLongItsQRCodeLasts(t *testing.T) {
 	}
 }
 
+func TestDraftReportsHowLongItsPairingCodeLasts(t *testing.T) {
+	m := newDraftManager()
+	draft := m.newTestDraft("user_123")
+
+	draft.setQRCode("data:image/png;base64,AAAA", time.Now().Add(60*time.Second))
+	if row := draft.snapshot(); row.PairingExpiresInMs != nil {
+		t.Fatalf("a QR login reports a pairing code expiry of %dms", *row.PairingExpiresInMs)
+	}
+
+	// The code lasts as long as the socket, counted from the first QR code —
+	// later codes must not push it back.
+	draft.setPairingCode("ABCD-EFGH")
+	draft.setQRCode("data:image/png;base64,BBBB", time.Now().Add(20*time.Second))
+	row := draft.snapshot()
+	if row.PairingExpiresInMs == nil || *row.PairingExpiresInMs <= 159_000 || *row.PairingExpiresInMs > 160_000 {
+		t.Fatalf("a fresh pairing code reports %v ms left", row.PairingExpiresInMs)
+	}
+
+	draft.setStatus(models.PhoneNumberStatusDisconnected)
+	if row := draft.snapshot(); row.PairingExpiresInMs != nil {
+		t.Fatalf("an ended login still reports %dms left on its pairing code", *row.PairingExpiresInMs)
+	}
+}
+
 // Once a scan pairs, the phone lists the device as linked. A new code request
 // or a closed card must not end that login, or the device is left linked with
 // no number behind it.
