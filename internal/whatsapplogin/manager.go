@@ -2556,6 +2556,19 @@ func deleteClientStore(ctx context.Context, client *whatsmeow.Client) error {
 }
 
 func connectAndLogout(ctx context.Context, client *whatsmeow.Client) error {
+	// A phone that already dropped the companion answers the connect with a 401.
+	// whatsmeow deletes the stored device for that on its handler queue, which
+	// a Disconnect closes first, so the record outlived every unlink attempt.
+	loggedOut := make(chan struct{}, 1)
+	client.AddEventHandler(func(evt any) {
+		if _, ok := evt.(*events.LoggedOut); ok {
+			select {
+			case loggedOut <- struct{}{}:
+			default:
+			}
+		}
+	})
+
 	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -2565,6 +2578,12 @@ func connectAndLogout(ctx context.Context, client *whatsmeow.Client) error {
 	}
 
 	if !client.WaitForConnection(20 * time.Second) {
+		select {
+		case <-loggedOut:
+			// Already unlinked on the phone: only the stored record is left.
+			return deleteClientStore(ctx, client)
+		case <-time.After(5 * time.Second):
+		}
 		client.Disconnect()
 		return fmt.Errorf("stored WhatsApp client did not become connected")
 	}
