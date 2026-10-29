@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver for goose
+	"github.com/jackc/pgx/v5/stdlib" // also registers the "pgx" database/sql driver
 	"github.com/pressly/goose/v3"
 )
 
@@ -26,6 +26,10 @@ var migrationsFS embed.FS
 // let one instance take the lot, so the pool is capped here instead.
 // pool_max_conns / pool_min_conns in DATABASE_URL win over both.
 //
+// One instance takes at most maxConns + WhatsAppStoreMaxConns (7), so the
+// outgoing and incoming instances of a deploy fit in 15 together; migrations
+// borrow this pool rather than adding a connection of their own.
+//
 // minConns is how many connections the pool keeps open while idle. A new
 // connection to the hosted database costs several round trips (TCP, TLS, auth)
 // before its first query, and a dashboard page asks for its lists all at once,
@@ -37,7 +41,7 @@ const (
 
 	// WhatsAppStoreMaxConns caps whatsmeow's database/sql handle, which would
 	// otherwise open a connection for every concurrent store query.
-	WhatsAppStoreMaxConns = 3
+	WhatsAppStoreMaxConns = 2
 )
 
 // startupWait is how long Connect keeps retrying while the pooler is full. On a
@@ -69,18 +73,26 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("create postgres pool: %w", err)
 	}
 
-	deadline := time.Now().Add(startupWait)
-	err = pool.Ping(ctx)
-	for IsPoolerFull(err) && time.Now().Before(deadline) && ctx.Err() == nil {
-		time.Sleep(3 * time.Second)
-		err = pool.Ping(ctx)
-	}
-	if err != nil {
+	if err := RetryWhilePoolerFull(ctx, func() error { return pool.Ping(ctx) }); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
 	return pool, nil
+}
+
+// RetryWhilePoolerFull runs fn, and runs it again every few seconds for up to
+// startupWait while it fails only because the pooler has no connection to give.
+// Every startup step that opens connections goes through it, since any one of
+// them can land while a deploy's outgoing instance still holds its share.
+func RetryWhilePoolerFull(ctx context.Context, fn func() error) error {
+	deadline := time.Now().Add(startupWait)
+	err := fn()
+	for IsPoolerFull(err) && time.Now().Before(deadline) && ctx.Err() == nil {
+		time.Sleep(3 * time.Second)
+		err = fn()
+	}
+	return err
 }
 
 // IsPoolerFull reports whether err is the Supabase pooler refusing a new client
@@ -162,6 +174,19 @@ func Migrate(databaseURL string) error {
 	defer sqlDB.Close()
 	sqlDB.SetMaxOpenConns(1)
 
+	return RetryWhilePoolerFull(context.Background(), func() error { return migrate(sqlDB) })
+}
+
+// MigratePool is Migrate over a pool that is already connected, borrowing one
+// of its connections instead of opening another. Closing the database/sql
+// handle it wraps the pool in leaves the pool open.
+func MigratePool(pool *pgxpool.Pool) error {
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	defer sqlDB.Close()
+	return migrate(sqlDB)
+}
+
+func migrate(sqlDB *sql.DB) error {
 	goose.SetBaseFS(migrationsFS)
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("set goose dialect: %w", err)

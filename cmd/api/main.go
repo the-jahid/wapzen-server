@@ -78,7 +78,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := db.Migrate(cfg.DatabaseURL); err != nil {
+	if err := db.MigratePool(pool); err != nil {
 		fatalf("database migration failed: %v", err)
 	}
 

@@ -337,7 +337,7 @@ func NewManager(ctx context.Context, databaseURL string, repo *phonenumbers.Repo
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	container := sqlstore.NewWithDB(sqlDB, "postgres", nil)
-	if err := container.Upgrade(ctx); err != nil {
+	if err := db.RetryWhilePoolerFull(ctx, func() error { return container.Upgrade(ctx) }); err != nil {
 		_ = container.Close()
 		return nil, fmt.Errorf("initialize whatsmeow sql store: %w", err)
 	}
