@@ -350,8 +350,15 @@ func NewManager(ctx context.Context, databaseURL string, repo *phonenumbers.Repo
 		return nil, fmt.Errorf("open whatsmeow sql store: %w", err)
 	}
 	sqlDB.SetMaxOpenConns(db.WhatsAppStoreMaxConns)
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+	// Keep the store's connections open through quiet spells, and pinged. An
+	// inbound call's key is decrypted through this store before the call can be
+	// pre-accepted; with the old 1 idle conn / 5 min idle expiry the first call
+	// after a quiet spell waited ~3 s for fresh connections. Holding both stays
+	// within the WhatsAppStoreMaxConns budget the pooler sizing assumes.
+	sqlDB.SetMaxIdleConns(db.WhatsAppStoreMaxConns)
+	sqlDB.SetConnMaxIdleTime(0)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	db.KeepSQLWarm(ctx, sqlDB, db.WhatsAppStoreMaxConns)
 
 	container := sqlstore.NewWithDB(sqlDB, "postgres", nil)
 	if err := db.RetryWhilePoolerFull(ctx, func() error { return container.Upgrade(ctx) }); err != nil {
@@ -1167,12 +1174,13 @@ func (m *Manager) deviceForLogin(ctx context.Context, row models.PhoneNumber) (*
 // agent is assigned to the number (unassigned or paused), or when the lookup
 // itself fails (fail closed: never answer with the wrong prompt).
 func (m *Manager) resolveInboundCallAgent(ctx context.Context, userID, phoneNumberID string) *voicecall.CallAgent {
+	startedAt := time.Now()
 	call, err := m.resolveCallAgent(ctx, userID, phoneNumberID, models.CallTypeInbound)
 	if err != nil {
 		log.Printf("voicecall: not answering inbound calls on phone_number_id=%s: %v; leaving call to normal WhatsApp behavior", phoneNumberID, err)
 		return nil
 	}
-	log.Printf("voicecall: live inbound agent %s answering call on phone_number_id=%s", call.AgentID, phoneNumberID)
+	log.Printf("voicecall: live inbound agent %s answering call on phone_number_id=%s (lookup %dms)", call.AgentID, phoneNumberID, time.Since(startedAt).Milliseconds())
 	return call
 }
 
@@ -1219,14 +1227,27 @@ func (m *Manager) resolveCallAgent(ctx context.Context, userID, phoneNumberID, d
 	if m.voice == nil || m.agentsRepo == nil {
 		return nil, ErrCallingUnavailable
 	}
-	minutesLeft, err := m.voiceMinutesLeft(ctx, userID)
-	if err != nil {
-		return nil, err
+	// An inbound caller is listening to the ring while this runs, so the
+	// independent lookups go out together rather than one round trip after
+	// another: minutes and agent first, then (needing the agent's id) its
+	// knowledge and tools.
+	var (
+		minutesLeft time.Duration
+		minutesErr  error
+		agent       *agents.InboundAgent
+		agentErr    error
+		wg          sync.WaitGroup
+	)
+	wg.Go(func() {
+		minutesLeft, minutesErr = m.voiceMinutesLeft(ctx, userID)
+	})
+	agent, agentErr = m.agentsRepo.LiveAgentForPhoneNumber(ctx, phoneNumberID)
+	wg.Wait()
+	if minutesErr != nil {
+		return nil, minutesErr
 	}
-
-	agent, err := m.agentsRepo.LiveAgentForPhoneNumber(ctx, phoneNumberID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve live %s agent: %w", direction, err)
+	if agentErr != nil {
+		return nil, fmt.Errorf("resolve live %s agent: %w", direction, agentErr)
 	}
 	if agent == nil {
 		return nil, fmt.Errorf("%w: no active agent is assigned to this phone number", ErrNoLiveAgent)
@@ -1239,13 +1260,17 @@ func (m *Manager) resolveCallAgent(ctx context.Context, userID, phoneNumberID, d
 		call.Instructions = withDateContext(call.Instructions, agenttools.Location(agent.Timezone, sessionPhone(m.getSession(phoneNumberID))))
 	}
 	// A small knowledge base goes into the call's prompt whole; only a large
-	// one is searched mid-call, so only then are its namespaces loaded.
+	// one is searched mid-call, so only then are its namespaces loaded. Tools
+	// load alongside.
+	wg.Go(func() {
+		call.Tools = m.toolsForCall(ctx, agent.ID)
+	})
 	if docs := m.knowledgeDocumentsForCall(ctx, agent.ID); len(docs) > 0 {
 		call.KnowledgeDocuments = docs
 	} else {
 		call.KnowledgeBases = m.knowledgeBasesForCall(ctx, agent.ID)
 	}
-	call.Tools = m.toolsForCall(ctx, agent.ID)
+	wg.Wait()
 	call.SendMessage = m.messageSenderFor(phoneNumberID, userID)
 	return call, nil
 }

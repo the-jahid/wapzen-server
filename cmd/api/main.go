@@ -76,6 +76,9 @@ func main() {
 		fatalf("database connection failed: %v", err)
 	}
 	defer pool.Close()
+	// Keep the pool's idle connections live so the first request (or inbound
+	// call) after a quiet spell does not pay for reviving them.
+	db.KeepPoolWarm(ctx, pool)
 
 	// No migrations here: this database is shared with whiskey-bailey-server,
 	// whose Prisma migrations (whiskey-bailey-server/prisma) own the whole
