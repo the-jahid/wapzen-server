@@ -113,18 +113,30 @@ func (r *Repository) MarkAnswered(ctx context.Context, id string) error {
 // duration in whole seconds (answered_at → now), and the hangup reason (NULL when
 // empty). duration_seconds stays NULL when the call was never answered. ended_at
 // and duration_seconds share the same now() so they can never disagree.
+//
+// The same statement adds the duration to the owner's voice minutes
+// (voice_usage.used_seconds, see the voiceusage package), so a call can never be
+// ended without being counted, and a call already ended is not counted twice.
 func (r *Repository) MarkEnded(ctx context.Context, id, reason string) error {
 	const q = `
-		UPDATE calls
-		SET status = 'ended',
-			ended_at = now(),
-			duration_seconds = CASE
-				WHEN answered_at IS NULL THEN NULL
-				ELSE GREATEST(0, EXTRACT(EPOCH FROM (now() - answered_at))::int)
-			END,
-			end_reason = $2,
-			updated_at = now()
-		WHERE id = $1`
+		WITH ended AS (
+			UPDATE calls
+			SET status = 'ended',
+				ended_at = now(),
+				duration_seconds = CASE
+					WHEN answered_at IS NULL THEN NULL
+					ELSE GREATEST(0, EXTRACT(EPOCH FROM (now() - answered_at))::int)
+				END,
+				end_reason = $2,
+				updated_at = now()
+			WHERE id = $1 AND status <> 'ended'
+			RETURNING user_id, duration_seconds
+		)
+		INSERT INTO voice_usage (user_id, used_seconds)
+		SELECT user_id, duration_seconds FROM ended WHERE duration_seconds > 0
+		ON CONFLICT (user_id) DO UPDATE
+		SET used_seconds = voice_usage.used_seconds + EXCLUDED.used_seconds,
+			updated_at = now()`
 	if _, err := r.pool.Exec(ctx, q, id, nullIfEmpty(reason)); err != nil {
 		return fmt.Errorf("mark call ended: %w", err)
 	}

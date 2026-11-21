@@ -165,7 +165,12 @@ func (h *CallHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		status, message := placeCallErrorResponse(err)
-		writeJSON(w, status, models.APIResponse{Success: false, Message: message})
+		resp := models.APIResponse{Success: false, Message: message}
+		if errors.Is(err, whatsapplogin.ErrVoiceMinutesUsedUp) {
+			// The dashboard keys its "buy more minutes" card on this code.
+			resp.Data = map[string]string{"code": VoiceMinutesUsedUpCode}
+		}
+		writeJSON(w, status, resp)
 		return
 	}
 
@@ -264,12 +269,18 @@ func isDialableTarget(target string) bool {
 	return true
 }
 
+// VoiceMinutesUsedUpCode is data.code on the 402 a call gets once the account's
+// voice minutes are used up.
+const VoiceMinutesUsedUpCode = "voice_minutes_used_up"
+
 // placeCallErrorResponse maps a call-placement failure onto its HTTP status and
 // message. The number's own state and its agent assignment are conflicts the
 // caller can fix; missing server credentials are an unavailable capability; and
 // anything else means WhatsApp itself refused the offer.
 func placeCallErrorResponse(err error) (int, string) {
 	switch {
+	case errors.Is(err, whatsapplogin.ErrVoiceMinutesUsedUp):
+		return http.StatusPaymentRequired, err.Error()
 	case errors.Is(err, whatsapplogin.ErrAgentMismatch):
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, whatsapplogin.ErrNumberNotConnected),

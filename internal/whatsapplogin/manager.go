@@ -37,6 +37,7 @@ import (
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/phonenumbers"
 	"whatsapp-ai-caller-server/internal/voicecall"
+	"whatsapp-ai-caller-server/internal/voiceusage"
 )
 
 const firstQRCodeWait = 12 * time.Second
@@ -91,6 +92,11 @@ var (
 	// ErrAgentMismatch means the caller named an agent that is not the one
 	// assigned to the phone number the call would be placed from.
 	ErrAgentMismatch = errors.New("agent is not assigned to this phone number")
+
+	// ErrVoiceMinutesUsedUp means the owner has used every voice minute their
+	// account has (voiceusage). Calls neither ring through to the agent nor go
+	// out until more minutes are added.
+	ErrVoiceMinutesUsedUp = errors.New("your voice minutes are used up; message us on WhatsApp to buy more minutes")
 )
 
 // Manager owns WhatsApp QR-login sessions and persisted WhatsApp device state.
@@ -99,6 +105,10 @@ type Manager struct {
 	agentsRepo *agents.Repository
 	container  *sqlstore.Container
 	voice      *voicecall.Client
+
+	// usage reads the owner's remaining voice minutes before each call. Nil
+	// (see UseVoiceUsage) applies no minute limit.
+	usage voiceUsageReader
 
 	mu       sync.RWMutex
 	sessions map[string]*loginSession
@@ -1166,6 +1176,38 @@ func (m *Manager) resolveInboundCallAgent(ctx context.Context, userID, phoneNumb
 	return call
 }
 
+// voiceUsageReader is the slice of voiceusage.Repository the manager needs.
+type voiceUsageReader interface {
+	Get(ctx context.Context, userID string) (voiceusage.Usage, error)
+}
+
+// UseVoiceUsage wires the per-account voice minutes check. Set once at
+// startup, before any call. Nil leaves calls unlimited.
+func (m *Manager) UseVoiceUsage(usage voiceUsageReader) {
+	if m == nil {
+		return
+	}
+	m.usage = usage
+}
+
+// voiceMinutesLeft returns how long the owner may still talk on a call, or
+// ErrVoiceMinutesUsedUp when nothing is left. 0 with no error means no limit
+// is configured. A failed lookup refuses the call: the agent lookup that
+// follows needs the same database anyway.
+func (m *Manager) voiceMinutesLeft(ctx context.Context, userID string) (time.Duration, error) {
+	if m.usage == nil {
+		return 0, nil
+	}
+	usage, err := m.usage.Get(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("check voice minutes: %w", err)
+	}
+	if usage.Exhausted {
+		return 0, ErrVoiceMinutesUsedUp
+	}
+	return usage.Remaining(), nil
+}
+
 // resolveCallAgent loads the live agent assigned to phoneNumberID for a call in
 // the given direction (models.CallTypeInbound or CallTypeOutbound) and renders
 // it into the per-call configuration voicecall runs the conversation from.
@@ -1177,6 +1219,10 @@ func (m *Manager) resolveCallAgent(ctx context.Context, userID, phoneNumberID, d
 	if m.voice == nil || m.agentsRepo == nil {
 		return nil, ErrCallingUnavailable
 	}
+	minutesLeft, err := m.voiceMinutesLeft(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 
 	agent, err := m.agentsRepo.LiveAgentForPhoneNumber(ctx, phoneNumberID)
 	if err != nil {
@@ -1186,6 +1232,7 @@ func (m *Manager) resolveCallAgent(ctx context.Context, userID, phoneNumberID, d
 		return nil, fmt.Errorf("%w: no active agent is assigned to this phone number", ErrNoLiveAgent)
 	}
 	call := buildCallAgent(userID, phoneNumberID, agent)
+	call.MinutesLeft = minutesLeft
 	// An agent with no prompt at all is left empty so voicecall's own default
 	// instructions still apply.
 	if call.Instructions != "" {

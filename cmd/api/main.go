@@ -25,6 +25,7 @@ import (
 	"whatsapp-ai-caller-server/internal/routes"
 	"whatsapp-ai-caller-server/internal/tools"
 	"whatsapp-ai-caller-server/internal/users"
+	"whatsapp-ai-caller-server/internal/voiceusage"
 	"whatsapp-ai-caller-server/internal/whatsapplogin"
 
 	// Blank import of the generated Swagger docs. The package is created by
@@ -139,6 +140,10 @@ func main() {
 	}
 	defer whatsAppLoginManager.Close()
 
+	// Every account gets 10 free voice minutes; calls stop once they are used.
+	voiceUsageRepo := voiceusage.NewRepository(pool)
+	whatsAppLoginManager.UseVoiceUsage(voiceUsageRepo)
+
 	// Reconnect already-paired numbers so they keep receiving messages after a
 	// restart, instead of sitting "connected" in the DB with no live client.
 	whatsAppLoginManager.ResumeSessions(ctx)
@@ -161,6 +166,7 @@ func main() {
 		KnowledgeBaseIndexer:      knowledgeBaseIndexer,
 		OutboundCampaignsRepo:     outboundCampaignsRepo,
 		ToolsRepo:                 toolsRepo,
+		VoiceUsageRepo:            voiceUsageRepo,
 		WhatsAppLoginManager:      whatsAppLoginManager,
 		ClerkWebhookSigningSecret: cfg.ClerkWebhookSigningSecret,
 		CORSAllowedOrigins:        cfg.CORSAllowedOrigins,

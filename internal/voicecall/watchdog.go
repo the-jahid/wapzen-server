@@ -33,6 +33,31 @@ type watchdogConfig struct {
 	idlePrompt  time.Duration
 	idleHangup  time.Duration
 	maxDuration time.Duration
+	// minutesCapped says maxDuration is the account's remaining voice minutes
+	// rather than the server's call-length cap, which changes the recorded
+	// end reason.
+	minutesCapped bool
+}
+
+// withMinutesLeft shortens the call-length cap to the account's remaining
+// voice minutes when those run out first. left <= 0 means no account limit.
+func (cfg watchdogConfig) withMinutesLeft(left time.Duration) watchdogConfig {
+	if left <= 0 {
+		return cfg
+	}
+	if cfg.maxDuration <= 0 || left < cfg.maxDuration {
+		cfg.maxDuration = left
+		cfg.minutesCapped = true
+	}
+	return cfg
+}
+
+// limitReason is the end reason recorded when the call hits its length cap.
+func (cfg watchdogConfig) limitReason() string {
+	if cfg.minutesCapped {
+		return "voice minutes used up"
+	}
+	return "maximum call length reached"
 }
 
 func loadWatchdogConfig() watchdogConfig {
@@ -172,7 +197,7 @@ func (w *callWatchdog) start(callID string, stop <-chan struct{}, busy func() bo
 				return
 			case watchdogTimeLimit:
 				log.Printf("voicecall: call %s reached the %s limit; ending it", callID, w.cfg.maxDuration)
-				end("maximum call length reached")
+				end(w.cfg.limitReason())
 				speak(timeLimitInstruction)
 				return
 			}

@@ -15,6 +15,7 @@ import (
 	"whatsapp-ai-caller-server/internal/swagger"
 	"whatsapp-ai-caller-server/internal/tools"
 	"whatsapp-ai-caller-server/internal/users"
+	"whatsapp-ai-caller-server/internal/voiceusage"
 	"whatsapp-ai-caller-server/internal/whatsapplogin"
 )
 
@@ -28,6 +29,7 @@ type Dependencies struct {
 	KnowledgeBaseIndexer      *knowledgebases.Indexer
 	OutboundCampaignsRepo     *outboundcampaigns.Repository
 	ToolsRepo                 *tools.Repository
+	VoiceUsageRepo            *voiceusage.Repository
 	WhatsAppLoginManager      *whatsapplogin.Manager
 	ClerkWebhookSigningSecret string
 	CORSAllowedOrigins        []string
@@ -64,6 +66,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		deps.WhatsAppLoginManager,
 	)
 	toolHandler := handlers.NewToolHandler(deps.ToolsRepo)
+	voiceUsageController := voiceusage.NewController(deps.VoiceUsageRepo)
 	authMW := appmiddleware.NewAuth(deps.UsersRepo)
 
 	// Built-in chi middleware.
@@ -96,6 +99,9 @@ func NewRouter(deps Dependencies) http.Handler {
 
 		// Users.
 		r.Get("/v1/users/me", userHandler.Me)
+
+		// Voice minutes used and left on the account (10 free, more bought).
+		r.Get("/v1/voice/usage", voiceUsageController.Get)
 
 		// Voice WhatsApp numbers: QR / pairing-code login through whatsmeow,
 		// stored in voice_phone_numbers. Everything voice lives under /voice/ so

@@ -219,6 +219,12 @@ type CallAgent struct {
 	// when positive, so an unset agent never silences the call.
 	Speed  float64
 	Volume float64
+
+	// MinutesLeft is how much talk time the owner's account has left
+	// (voiceusage). When positive and shorter than the server's call-length
+	// cap, the call is wound down politely once it runs out. Zero means no
+	// account limit applies to this call.
+	MinutesLeft time.Duration
 }
 
 // New builds a voice-call client from the environment, or returns nil when
@@ -701,8 +707,17 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 	var pendingLabel string
 	playbackEnabled := false
 
-	// The watchdog starts when the call goes live and stops when it ends.
-	watchdog := newCallWatchdog(c.watchdog)
+	// The watchdog starts when the call goes live and stops when it ends. An
+	// account with fewer voice minutes left than the call-length cap gets the
+	// shorter cap.
+	watchdogCfg := c.watchdog
+	if agent != nil {
+		watchdogCfg = watchdogCfg.withMinutesLeft(agent.MinutesLeft)
+		if watchdogCfg.minutesCapped {
+			log.Printf("voicecall: call %s limited to %s by the account's remaining voice minutes", call.ID(), watchdogCfg.maxDuration)
+		}
+	}
+	watchdog := newCallWatchdog(watchdogCfg)
 	watchdogStop := make(chan struct{})
 	var watchdogStopOnce sync.Once
 	stopWatchdog := func() { watchdogStopOnce.Do(func() { close(watchdogStop) }) }
