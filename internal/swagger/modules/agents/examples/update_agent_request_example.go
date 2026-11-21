@@ -8,8 +8,8 @@ var UpdateAgentRequestExample = map[string]any{
 	"agent": map[string]any{
 		"name": "Jarvis (Updated)",
 	},
-	"model": map[string]any{
-		"temperature": 0.4,
+	"voice": map[string]any{
+		"openai": map[string]any{"voice_id": "marin", "voice_name": "Marin"},
 	},
 	"post_call": map[string]any{
 		"analysis_model": "gpt-4.1-mini",

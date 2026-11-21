@@ -73,12 +73,8 @@ go run ./cmd/api
 
 The server starts on `http://localhost:8080` (configurable via `PORT`).
 
-To apply database migrations without starting the API or reconnecting WhatsApp
-sessions, run:
-
-```powershell
-go run ./cmd/migrate
-```
+The database schema (voice tables included) is created by
+whiskey-bailey-server's Prisma migrations: run `npx prisma migrate deploy` there.
 
 For live reload during backend development, install and run Air:
 
@@ -113,65 +109,35 @@ are what the server uses when a variable is unset.
 | Variable                       | Default       | Description                     |
 | ------------------------------ | ------------- | ------------------------------- |
 | `PORT`                         | `8080`        | Port the HTTP server listens on |
-| `APP_ENV`                      | `development` | Application environment label   |
 | `DATABASE_URL`                 | none          | PostgreSQL connection string    |
 | `CLERK_SECRET_KEY`             | none          | Clerk backend credential        |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | none          | Clerk webhook signing secret    |
 
-### Model provider credentials
+### Voice calls (OpenAI Realtime)
 
-| Variable             | Default | Description                                                                |
-| -------------------- | ------- | -------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`     | none    | OpenAI credential, shared by every OpenAI voice, text, and embedding call |
-| `ANTHROPIC_API_KEY`  | none    | Anthropic credential when an agent uses Claude                             |
-| `ELEVENLABS_API_KEY` | none    | ElevenLabs Scribe, streaming TTS, and voice-library browsing credential    |
+Every call runs on one OpenAI Realtime speech-to-speech session: it opens one
+WebSocket as the call is answered, streams caller audio continuously, uses
+server VAD with barge-in, and sends each output-audio delta straight to
+WhatsApp. The Realtime model, voice, speed and volume are chosen per agent in
+the dashboard; the variables below are the server fallbacks.
 
-### OpenAI voice (standard pipeline: transcription -> text model -> TTS)
-
-| Variable                       | Default                                          | Description                                                  |
-| ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------ |
-| `OPENAI_VOICE_ENABLED`         | `true`                                           | Enable OpenAI inbound voice calls                            |
-| `OPENAI_TRANSCRIPTIONS_URL`    | `https://api.openai.com/v1/audio/transcriptions` | Transcription endpoint                                       |
-| `OPENAI_SPEECH_URL`            | `https://api.openai.com/v1/audio/speech`         | Text-to-speech endpoint                                      |
-| `OPENAI_TRANSCRIBE_MODEL`      | `gpt-4o-mini-transcribe`                         | Model used to transcribe each caller turn                    |
-| `OPENAI_TTS_MODEL`             | `gpt-4o-mini-tts`                                | Default TTS model; agent settings override it per call       |
-| `OPENAI_TTS_VOICE`             | `coral`                                          | Default TTS voice; agent settings override it per call       |
-| `OPENAI_TTS_SPEED`             | `1`                                              | Default spoken rate, `0.25` to `4`                           |
-| `OPENAI_TTS_VOLUME`            | `1`                                              | Default playback gain, `0` to `2`                            |
-| `OPENAI_RESPONSE_INSTRUCTIONS` | short spoken-reply prompt                        | Fallback instructions when an agent has no prompt            |
-| `OPENAI_VAD_RMS_THRESHOLD`     | `0.015`                                          | Audio level counted as caller speech by local turn detection |
-| `OPENAI_VAD_SILENCE_MS`        | `250`                                            | Caller silence before the AI takes its turn                  |
-| `OPENAI_VAD_PREFIX_MS`         | `200`                                            | Audio kept from just before speech was detected              |
-| `OPENAI_VAD_MIN_SPEECH_MS`     | `180`                                            | Shortest sound treated as a real turn                        |
-| `OPENAI_VAD_MAX_UTTERANCE_MS`  | `30000`                                          | Longest caller turn before it is cut and sent                |
-
-### OpenAI Realtime
-
-| Variable                     | Default                 | Description                                                     |
-| ---------------------------- | ----------------------- | --------------------------------------------------------------- |
-| `OPENAI_REALTIME_ENABLED`    | `true`                  | Make the OpenAI Realtime call provider available                |
-| `OPENAI_REALTIME_MODEL`      | `gpt-realtime-2.1-mini` | Fallback Realtime model when an agent has no saved model        |
-| `OPENAI_REALTIME_SILENCE_MS` | `250`                   | Realtime server-VAD trailing silence before response generation |
-
-### ElevenLabs voice
-
-| Variable                               | Default  | Description                                                                                          |
-| -------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `ELEVENLABS_REALTIME_ENABLED`          | `true`   | Enable ElevenLabs realtime inbound calls                                                             |
-| `ELEVENLABS_COMMIT_STRATEGY`           | `manual` | `manual`: the server detects the end of a turn and commits it to Scribe (fastest); `vad`: Scribe decides |
-| `ELEVENLABS_ENDPOINT_SILENCE_MS`       | `250`    | Caller silence before the server commits a turn (`manual` only)                                      |
-| `ELEVENLABS_ENDPOINT_RMS_THRESHOLD`    | `0.015`  | Audio level counted as caller speech (`manual` only)                                                 |
-| `ELEVENLABS_ENDPOINT_MIN_SPEECH_MS`    | `180`    | Shortest sound treated as a real turn (`manual` only)                                                |
-| `ELEVENLABS_ENDPOINT_MAX_UTTERANCE_MS` | `30000`  | Longest caller turn (`manual` only)                                                                  |
-| `ELEVENLABS_VAD_SILENCE_MS`            | `250`    | Trailing silence before Scribe commits a turn (`vad` only)                                           |
-
-### Shared voice tuning
-
-| Variable                 | Default | Description                                                                                                  |
-| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `VOICE_SILENCE_FILL_MS`  | `1500`  | Fills the audio gaps WhatsApp leaves while the caller is silent (DTX) so turn detection advances; `0` disables |
-| `VOICE_REASONING_EFFORT` | `none`  | Reasoning effort asked of reasoning models during calls; `off` leaves the model default                      |
-| `VOICE_TEXT_VERBOSITY`   | `low`   | Keeps spoken replies short                                                                                   |
+| Variable                            | Default                   | Description                                                                     |
+| ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                    | none                      | OpenAI credential, shared by calls and knowledge base embeddings                |
+| `OPENAI_VOICE_ENABLED`              | `true`                    | `false` turns call answering off                                                |
+| `OPENAI_REALTIME_ENABLED`           | `true`                    | `false` turns call answering off                                                |
+| `OPENAI_REALTIME_MODEL`             | `gpt-realtime-2.1-mini`   | Realtime model for an agent with none saved                                     |
+| `OPENAI_REALTIME_VOICE`             | `echo`                    | Realtime voice for an agent with none saved                                     |
+| `OPENAI_REALTIME_SPEED`             | `1`                       | Spoken rate for an agent with none saved                                        |
+| `OPENAI_REALTIME_VOLUME`            | `1`                       | Playback gain for an agent with none saved, `0` to `2`                          |
+| `OPENAI_REALTIME_SILENCE_MS`        | `250`                     | Caller silence before the agent takes its turn                                  |
+| `OPENAI_REALTIME_PREFIX_PADDING_MS` | `120`                     | Audio kept from just before speech was detected                                 |
+| `OPENAI_REALTIME_VAD_THRESHOLD`     | `0.5`                     | Server-VAD speech threshold                                                     |
+| `OPENAI_REALTIME_VAD_MODE`          | `server_vad`              | `semantic_vad` lets the model judge the end of a turn instead                   |
+| `OPENAI_REALTIME_EAGERNESS`         | `high`                    | Semantic VAD eagerness (`semantic_vad` only)                                    |
+| `OPENAI_TRANSCRIBE_MODEL`           | `gpt-4o-mini-transcribe`  | Transcribes the caller's side for the saved call transcript                     |
+| `OPENAI_RESPONSE_INSTRUCTIONS`      | short spoken-reply prompt | Fallback instructions when an agent has no prompt                               |
+| `VOICE_SILENCE_FILL_MS`             | `1500`                    | Fills the audio gaps WhatsApp leaves while the caller is silent (DTX); `0` off |
 
 ### Knowledge base (Pinecone)
 
@@ -194,34 +160,6 @@ but adding sources to a knowledge base answers `503`.
 | `WHATSAPP_LOG_LEVEL`         | `info`  | whatsmeow log level; `debug` logs every stanza, needed to read call signalling |
 | `MEOWCALLER_DIAG_DIR`        | unset   | Write per-call media diagnostics here. The files contain sensitive call data   |
 | `VOICECALL_RECORD_DIR`       | unset   | Record raw caller audio to one WAV per call. The files contain sensitive call data |
-
-ElevenLabs inbound calls do not use an ElevenLabs Agent ID. Audio is transcribed
-live with ElevenLabs Scribe, sent to the OpenAI or Anthropic text model selected
-on the local agent, and spoken with ElevenLabs streaming TTS. Configure
-`ELEVENLABS_API_KEY` plus the API key for the selected text-model provider. Each
-call uses the local agent's prompt, model, voice, language, greeting, and voice
-settings dynamically.
-
-For the lowest ElevenLabs response latency, use `scribe_v2_realtime` rather than a batch
-Scribe model. The server opens realtime transcription and TTS concurrently,
-streams each 60 ms WhatsApp audio frame immediately, and begins TTS from the
-model's first useful phrase. Runtime logs include `latency` entries for the
-first model token and first audio playback; the standard OpenAI fallback also reports
-transcription time. These markers identify a slow selected model or provider
-region without enabling sensitive call recording.
-
-Each agent explicitly selects one of three call providers: `openai_realtime`,
-`openai`, or `11labs`. OpenAI Realtime is the default for newly created agents.
-It opens one WebSocket as the call is answered, streams caller audio continuously,
-uses server VAD with barge-in, and sends each output-audio delta directly to
-WhatsApp. This removes the separate transcription, text-model, and TTS round
-trips. The Realtime model is selected per agent in the dashboard; `OPENAI_REALTIME_MODEL`
-remains the server fallback for agents without a saved selection.
-
-The `openai` provider is the normal request-based transcription -> text model ->
-TTS pipeline, while `11labs` uses ElevenLabs Scribe and streaming TTS. Set
-`OPENAI_REALTIME_ENABLED=false` to make Realtime unavailable without disabling
-the normal OpenAI provider.
 
 ## Example requests
 

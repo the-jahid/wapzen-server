@@ -42,7 +42,7 @@ func uploadRequest(t *testing.T, files []uploadPart, titles []string) *http.Requ
 		t.Fatalf("close form: %v", err)
 	}
 
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base/kb-1/sources", &body)
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base/kb-1/sources", &body)
 	r.Header.Set("Content-Type", form.FormDataContentType())
 	return r
 }
@@ -162,7 +162,7 @@ func TestReadAddSourcesEntriesUploadEnforcesFileCount(t *testing.T) {
 // A JSON body still reads as text sources, so adding the upload path did not
 // change what the documented endpoint does.
 func TestReadAddSourcesEntriesFromJSON(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base/kb-1/sources",
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base/kb-1/sources",
 		strings.NewReader(`{"knowledge_base_texts":[{"title":"Refund policy","text":"Refunds take 14 days."}]}`))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

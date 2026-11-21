@@ -158,7 +158,7 @@ func TestResetForRePairClearsJIDAndPreservesScopedRow(t *testing.T) {
 	if !strings.Contains(db.query, "SET wa_jid = NULL") {
 		t.Fatalf("query does not clear the old WhatsApp JID: %s", db.query)
 	}
-	if strings.Contains(db.query, "DELETE FROM phone_numbers") {
+	if strings.Contains(db.query, "DELETE FROM voice_phone_numbers") {
 		t.Fatalf("query unexpectedly deletes the phone-number row: %s", db.query)
 	}
 	if !strings.Contains(db.query, "WHERE id = $1 AND user_id = $2") {
@@ -177,7 +177,7 @@ func TestDeleteByUserScopesByAuthenticatedUser(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
-	if !strings.Contains(db.query, "DELETE FROM phone_numbers") {
+	if !strings.Contains(db.query, "DELETE FROM voice_phone_numbers") {
 		t.Fatalf("query does not delete phone number: %s", db.query)
 	}
 	if !strings.Contains(db.query, "WHERE id = $1 AND user_id = $2") {

@@ -136,7 +136,7 @@ type createOutboundCampaignRequest struct {
 //
 // Create godoc
 // @Summary      Create Outbound Campaign
-// @Description  Creates an outbound campaign owned by the authenticated API key owner. campaign_name is the only required field and must be unique among the owner's campaigns. The campaign is created at status draft with every counter at zero; omitting budget_usd leaves it uncapped. agent_id is optional here but required before the campaign can run: it must name one of the owner's agents that already has a phone number assigned, and that agent's number is the one the campaign dials from — a campaign never names a number of its own.
+// @Description  Creates an outbound campaign owned by the authenticated user. campaign_name is the only required field and must be unique among the owner's campaigns. The campaign is created at status draft with every counter at zero; omitting budget_usd leaves it uncapped. agent_id is optional here but required before the campaign can run: it must name one of the owner's agents that already has a phone number assigned, and that agent's number is the one the campaign dials from — a campaign never names a number of its own.
 // @Tags         Outbound Campaign
 // @Accept       json
 // @Produce      json
@@ -201,7 +201,7 @@ func (h *OutboundCampaignHandler) Create(w http.ResponseWriter, r *http.Request)
 //
 // List godoc
 // @Summary      List Outbound Campaigns
-// @Description  Returns a paginated list of the outbound campaigns owned by the authenticated API key owner, newest first, each with its current counters.
+// @Description  Returns a paginated list of the outbound campaigns owned by the authenticated user, newest first, each with its current counters.
 // @Tags         Outbound Campaign
 // @Produce      json
 // @Security     BearerAuth
@@ -402,7 +402,7 @@ func parseAnalyticsDays(w http.ResponseWriter, q url.Values) (int, bool) {
 //
 // Get godoc
 // @Summary      Get Outbound Campaign
-// @Description  Returns a single outbound campaign by id, scoped to the authenticated API key owner, with its counters and the pickup_rate and success_rate derived from them.
+// @Description  Returns a single outbound campaign by id, scoped to the authenticated user, with its counters and the pickup_rate and success_rate derived from them.
 // @Tags         Outbound Campaign
 // @Produce      json
 // @Security     BearerAuth
@@ -470,7 +470,7 @@ type updateOutboundCampaignRequest struct {
 //
 // Update godoc
 // @Summary      Update Outbound Campaign
-// @Description  Applies a partial update to a campaign owned by the authenticated API key owner. Only campaign_name, status, budget_usd and agent_id may be changed; at least one field must be supplied and omitted fields keep their stored value. Send budget_usd null to remove a spend cap, or agent_id null to detach the agent. agent_id must name one of the owner's agents that has a phone number assigned; the campaign dials from that agent's number, which is why the number itself is read-only. Legal status moves are draft/paused to running, running to paused or completed, and any live status to failed; completed and failed are terminal. A campaign cannot be running without an agent, so starting one without an agent, or detaching the agent of a running one, is refused with 409.
+// @Description  Applies a partial update to a campaign owned by the authenticated user. Only campaign_name, status, budget_usd and agent_id may be changed; at least one field must be supplied and omitted fields keep their stored value. Send budget_usd null to remove a spend cap, or agent_id null to detach the agent. agent_id must name one of the owner's agents that has a phone number assigned; the campaign dials from that agent's number, which is why the number itself is read-only. Legal status moves are draft/paused to running, running to paused or completed, and any live status to failed; completed and failed are terminal. A campaign cannot be running without an agent, so starting one without an agent, or detaching the agent of a running one, is refused with 409.
 // @Tags         Outbound Campaign
 // @Accept       json
 // @Produce      json
@@ -575,7 +575,7 @@ func (h *OutboundCampaignHandler) Update(w http.ResponseWriter, r *http.Request)
 //
 // Delete godoc
 // @Summary      Delete Outbound Campaign
-// @Description  Deletes a campaign by id, scoped to the authenticated API key owner. A running campaign is refused with 409; pause it first. Calls the campaign already placed are not deleted.
+// @Description  Deletes a campaign by id, scoped to the authenticated user. A running campaign is refused with 409; pause it first. Calls the campaign already placed are not deleted.
 // @Tags         Outbound Campaign
 // @Produce      json
 // @Security     BearerAuth

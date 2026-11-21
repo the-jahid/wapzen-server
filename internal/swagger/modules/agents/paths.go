@@ -47,7 +47,7 @@ func errJSON(desc string, example any) oas.Object {
 }
 
 func resp401() oas.Object {
-	return errJSON("Unauthorized - missing or invalid API key bearer token.", examples.UnauthorizedErrorExample)
+	return errJSON("Unauthorized - missing or invalid bearer token.", examples.UnauthorizedErrorExample)
 }
 
 func resp404() oas.Object {
@@ -103,10 +103,10 @@ func agentIDParam() oas.Object {
 	}
 }
 
-// apiKeySecurity marks an operation as requiring the API-key-only bearer
+// bearerSecurity marks an operation as requiring the Clerk session bearer
 // security scheme registered in the document's components.
-func apiKeySecurity() []any {
-	return []any{oas.Object{"apiKeyBearer": []any{}}}
+func bearerSecurity() []any {
+	return []any{oas.Object{"bearer": []any{}}}
 }
 
 func pageParam() oas.Object {
@@ -150,8 +150,8 @@ func listAgentsOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listAgents",
 		"summary":     "Get All Agents",
-		"description": "Returns a paginated list of the agents owned by the authenticated API key owner. Supports sparse fieldsets via the `fields` query parameter.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a paginated list of the agents owned by the authenticated user. Supports sparse fieldsets via the `fields` query parameter.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{pageParam(), limitParam(), fieldsParam()},
 		"responses": oas.Object{
 			"200": okJSONNamedExamples("A page of agents.", "ListAgentsResponse", oas.Object{
@@ -160,7 +160,7 @@ func listAgentsOperation() oas.Object {
 					"value":   examples.ListAgentsResponseExample,
 				},
 				"selectedFields": oas.Object{
-					"summary": "Sparse fieldset: id, agent.status, agent.language, agent.call_direction",
+					"summary": "Sparse fieldset: id, agent.status, agent.language, agent.name",
 					"value":   examples.ListAgentsSelectedFieldsExample,
 				},
 			}),
@@ -177,8 +177,8 @@ func createAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "createAgent",
 		"summary":     "Create Agent",
-		"description": "Creates a new outbound agent owned by the authenticated API key owner from the supplied configuration. If `agent.phone_number_id` is set, the phone number must belong to the user and must not already be assigned to another agent. Every id in `knowledge_base.knowledge_base_ids` must reference a knowledge base owned by the same user, and every id in `tools.tool_ids` a tool owned by the same user.",
-		"security":    apiKeySecurity(),
+		"description": "Creates a new outbound agent owned by the authenticated user from the supplied configuration. If `agent.phone_number_id` is set, the phone number must belong to the user and must not already be assigned to another agent. Every id in `knowledge_base.knowledge_base_ids` must reference a knowledge base owned by the same user, and every id in `tools.tool_ids` a tool owned by the same user.",
+		"security":    bearerSecurity(),
 		"requestBody": requestBody("The agent configuration to create.", "CreateAgentRequest", examples.CreateAgentRequestExample),
 		"responses": oas.Object{
 			"201": okJSON("The created agent resource.", "CreateAgentResponse", examples.CreateAgentResponseExample),
@@ -198,8 +198,8 @@ func getAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "getAgent",
 		"summary":     "Get Agent",
-		"description": "Returns a single agent by id, scoped to the authenticated API key owner.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a single agent by id, scoped to the authenticated user.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{agentIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The requested agent resource.", "GetAgentResponse", examples.GetAgentResponseExample),
@@ -217,8 +217,8 @@ func updateAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "updateAgent",
 		"summary":     "Update Agent",
-		"description": "Applies a partial update to an existing outbound agent owned by the authenticated API key owner. Only the supplied fields are changed. Assigning `agent.phone_number_id` is rejected (409) when another agent already uses that phone number. Assigning a number the agent did not already have also sets its status to `active`, unless `agent.status` is sent in the same request. Sending `knowledge_base.knowledge_base_ids` or `tools.tool_ids` replaces that attachment set wholesale; omitting a section leaves it untouched.",
-		"security":    apiKeySecurity(),
+		"description": "Applies a partial update to an existing outbound agent owned by the authenticated user. Only the supplied fields are changed. Assigning `agent.phone_number_id` is rejected (409) when another agent already uses that phone number. Assigning a number the agent did not already have also sets its status to `active`, unless `agent.status` is sent in the same request. Sending `knowledge_base.knowledge_base_ids` or `tools.tool_ids` replaces that attachment set wholesale; omitting a section leaves it untouched.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{agentIDParam()},
 		"requestBody": requestBody("The fields to change.", "UpdateAgentRequest", examples.UpdateAgentRequestExample),
 		"responses": oas.Object{
@@ -239,13 +239,13 @@ func deleteAgentOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteAgent",
 		"summary":     "Delete Agent",
-		"description": "Deletes an agent by id, scoped to the authenticated API key owner. A knowledge base " +
+		"description": "Deletes an agent by id, scoped to the authenticated user. A knowledge base " +
 			"belongs to the agent that attached it, so this deletes those too — with their sources and every " +
 			"vector indexed under their namespaces. Detach any worth keeping first, by removing its id from the " +
 			"agent's `knowledge_base.knowledge_base_ids`. Tools are shared rather than owned: they are detached " +
 			"and stay in the account, available to the agents that still use them. Any phone number assigned to " +
 			"the agent is released rather than deleted.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{agentIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The agent was deleted.", "DeleteAgentResponse", examples.DeleteAgentResponseExample),

@@ -61,7 +61,7 @@ func attachTools(ctx context.Context, tx pgx.Tx, userID, agentID string, ids []s
 // ownership never leaks. The rows are locked so a tool cannot be deleted between
 // the check and the insert, which would fail on the foreign key instead.
 func verifyToolsOwned(ctx context.Context, tx pgx.Tx, userID string, ids []string) error {
-	const query = `SELECT id FROM tools WHERE id = ANY($1::text[]) AND user_id = $2 ORDER BY id FOR SHARE`
+	const query = `SELECT id FROM voice_tools WHERE id = ANY($1::text[]) AND user_id = $2 ORDER BY id FOR SHARE`
 	rows, err := tx.Query(ctx, query, ids, userID)
 	if err != nil {
 		return fmt.Errorf("lock tools: %w", err)
@@ -108,7 +108,7 @@ func (r *Repository) ToolsForAgent(ctx context.Context, agentID string) ([]model
 	query := fmt.Sprintf(`
 		SELECT t.id, t.type, t.tool_name, t.description, t.config
 		FROM agent_tools at
-		JOIN tools t ON t.id = at.tool_id
+		JOIN voice_tools t ON t.id = at.tool_id
 		WHERE at.agent_id = $1
 		ORDER BY %s`, toolOrder)
 

@@ -315,16 +315,16 @@ func addKnowledgeBaseSourcesUploadSchema() oas.Object {
 
 func resourceLinksSchema() *oas.Schema {
 	return oas.Obj().Desc("Resource links.").
-		P("self", oas.Str().Desc("Canonical URL of this resource.").Example("/v1/knowledge-base/knowledge_base_a456426614174000"))
+		P("self", oas.Str().Desc("Canonical URL of this resource.").Example("/v1/voice/knowledge-base/knowledge_base_a456426614174000"))
 }
 
 func listLinksSchema() *oas.Schema {
 	return oas.Obj().Desc("Pagination links as query URLs.").
-		P("self", oas.Str().Example("/v1/knowledge-base?page=1&limit=20")).
-		P("first", oas.Str().Example("/v1/knowledge-base?page=1&limit=20")).
+		P("self", oas.Str().Example("/v1/voice/knowledge-base?page=1&limit=20")).
+		P("first", oas.Str().Example("/v1/voice/knowledge-base?page=1&limit=20")).
 		P("previous", oas.Str().Nullable().Desc("Previous page URL, or null on the first page.").Example(nil)).
 		P("next", oas.Str().Nullable().Desc("Next page URL, or null on the last page.").Example(nil)).
-		P("last", oas.Str().Example("/v1/knowledge-base?page=1&limit=20"))
+		P("last", oas.Str().Example("/v1/voice/knowledge-base?page=1&limit=20"))
 }
 
 func paginationMetaSchema() *oas.Schema {

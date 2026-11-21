@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"whatsapp-ai-caller-server/internal/agenttools"
 	"whatsapp-ai-caller-server/internal/models"
@@ -29,8 +30,11 @@ const (
 	knowledgeToolTimeout = 6 * time.Second
 
 	// knowledgeToolMaxChars bounds the retrieved text handed back to the model,
-	// for the same reason: everything here is read before the reply begins.
-	knowledgeToolMaxChars = 3000
+	// for the same reason: everything here is read before the reply begins. It
+	// has to hold several whole chunks (up to 2000 chars each by default): at
+	// 3000, passages two to four were cut and the model filled the gap itself —
+	// the chat agent measured exactly that before raising its cap to 8000.
+	knowledgeToolMaxChars = 6000
 )
 
 // KnowledgeRetriever reads an agent's knowledge bases back during a call.
@@ -132,16 +136,17 @@ func (t *knowledgeToolbox) Instructions() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("You can look things up with the ")
+	b.WriteString("Business information is available through the ")
 	b.WriteString(knowledgeToolName)
 	b.WriteString(" tool")
 	if len(t.names) > 0 {
 		b.WriteString(", which covers: ")
 		b.WriteString(strings.Join(t.names, ", "))
 	}
-	b.WriteString(". Use it before answering any question about those topics, and answer from what it returns rather than from memory. ")
-	b.WriteString("If it returns nothing relevant, say you do not have that information instead of guessing. ")
-	b.WriteString("Never mention the tool, the search, or the knowledge base to the caller — just answer.")
+	b.WriteString(". Before answering any question about the business, its products, services, prices, people or policies that the instructions above do not already answer, call it, even if you think you know the answer. ")
+	b.WriteString("Put the caller's question in the query as a short, clear question. ")
+	b.WriteString("Answer only from what it returns, in your own words. If it returns nothing relevant, say you don't have that information; never fill the gap from general knowledge. ")
+	b.WriteString("While you look something up you may say one brief, natural phrase such as \"One moment, please.\", but never mention a tool, a search, a database or a knowledge base.")
 	return b.String()
 }
 
@@ -189,11 +194,17 @@ func (t *knowledgeToolbox) Run(ctx context.Context, name, arguments string) stri
 	}
 	log.Printf("voicecall: call %s knowledge lookup %q returned %d passages (top score %.3f) from %d namespace(s) in %dms",
 		t.callID, query, len(snippets), topScore, len(t.namespaces), time.Since(startedAt).Milliseconds())
-	if len(snippets) == 0 {
-		return "No relevant information was found in the knowledge base."
+	passages := formatKnowledgeSnippets(snippets)
+	if passages == noKnowledgeFound {
+		return noKnowledgeFound + " Tell the caller you don't have that information; do not answer from general knowledge."
 	}
-	return formatKnowledgeSnippets(snippets)
+	// The reminder rides on the result itself because this is the text the
+	// model reads last before it speaks.
+	return "Passages found for \"" + query + "\". Use only the facts in them; if they do not answer the question, tell the caller you don't have that information.\n\n" + passages
 }
+
+// noKnowledgeFound is what a lookup reports when nothing usable came back.
+const noKnowledgeFound = "No relevant information was found in the knowledge base."
 
 // formatKnowledgeSnippets renders retrieved passages for the model: each one
 // titled with the source it came from, so a spoken answer can attribute it, and
@@ -211,7 +222,7 @@ func formatKnowledgeSnippets(snippets []models.KnowledgeSnippet) string {
 			if b.Len() == 0 {
 				// The first passage alone is over the budget; a truncated answer is
 				// still better than none.
-				b.WriteString(entry[:knowledgeToolMaxChars])
+				b.WriteString(truncateUTF8(entry, knowledgeToolMaxChars))
 			}
 			break
 		}
@@ -219,9 +230,22 @@ func formatKnowledgeSnippets(snippets []models.KnowledgeSnippet) string {
 	}
 	result := strings.TrimSpace(b.String())
 	if result == "" {
-		return "No relevant information was found in the knowledge base."
+		return noKnowledgeFound
 	}
 	return result
+}
+
+// truncateUTF8 cuts s to at most maxBytes without splitting a character, so a
+// Bengali or Hindi passage is never handed to the model ending in a broken byte.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 func knowledgeSnippetTitle(snippet models.KnowledgeSnippet, index int) string {

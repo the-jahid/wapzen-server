@@ -1,5 +1,7 @@
-// Package knowledgebases persists knowledge bases into the knowledge_bases
-// table and their sources into knowledge_base_sources. A knowledge base is the
+// Package knowledgebases persists voice knowledge bases into the
+// voice_knowledge_bases table and their sources into
+// voice_knowledge_base_sources (chat's knowledge_bases are whiskey's and are
+// never read here). A knowledge base is the
 // container an agent retrieves from: Postgres owns the container row, its
 // indexing status and the source text, while the embeddings that text is
 // actually retrieved by live in the vector store, under the row's namespace.
@@ -49,7 +51,7 @@ type dbQuerier interface {
 }
 
 // Repository owns persistence for the knowledge_bases table and the
-// knowledge_base_sources rows hanging off it.
+// voice_knowledge_base_sources rows hanging off it.
 type Repository struct {
 	db dbQuerier
 	// pool is kept alongside db for the writes that span several statements and
@@ -82,7 +84,7 @@ const namespacePrefix = "kb_"
 func (r *Repository) Create(ctx context.Context, params models.NewKnowledgeBase) (models.KnowledgeBase, error) {
 	query := fmt.Sprintf(`
 		WITH new_row AS MATERIALIZED (SELECT gen_random_uuid()::text AS id)
-		INSERT INTO knowledge_bases (
+		INSERT INTO voice_knowledge_bases (
 			id, user_id, knowledge_base_name, pinecone_namespace,
 			enable_auto_refresh, max_chunk_size, min_chunk_size
 		)
@@ -120,7 +122,7 @@ func (r *Repository) Create(ctx context.Context, params models.NewKnowledgeBase)
 func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offset int) ([]models.KnowledgeBase, int, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM knowledge_bases
+		FROM voice_knowledge_bases
 		WHERE user_id = $1
 		ORDER BY created_at DESC, id DESC
 		LIMIT $2 OFFSET $3
@@ -130,7 +132,7 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 	// The count and the page go out as one batch, which the query interface
 	// cannot send; the pool can.
 	total, err := db.ListPage(ctx, r.pool,
-		"SELECT count(*) FROM knowledge_bases WHERE user_id = $1", []any{userID},
+		"SELECT count(*) FROM voice_knowledge_bases WHERE user_id = $1", []any{userID},
 		query, []any{userID, limit, offset},
 		func(rows pgx.Rows) error {
 			kb, err := scanKnowledgeBase(rows)
@@ -153,7 +155,7 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 func (r *Repository) GetByUser(ctx context.Context, userID, id string) (models.KnowledgeBase, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM knowledge_bases
+		FROM voice_knowledge_bases
 		WHERE id = $1 AND user_id = $2
 	`, knowledgeBaseColumns)
 
@@ -204,7 +206,7 @@ func (r *Repository) UpdateByUser(ctx context.Context, userID, id string, params
 	}
 
 	query := fmt.Sprintf(`
-		UPDATE knowledge_bases
+		UPDATE voice_knowledge_bases
 		SET %s
 		WHERE id = $1 AND user_id = $2
 		RETURNING %s
@@ -232,7 +234,7 @@ func (r *Repository) UpdateByUser(ctx context.Context, userID, id string, params
 // dropping the row is all this does; purging the namespace follows the indexing
 // pipeline.
 func (r *Repository) DeleteByUser(ctx context.Context, userID, id string) error {
-	const query = `DELETE FROM knowledge_bases WHERE id = $1 AND user_id = $2`
+	const query = `DELETE FROM voice_knowledge_bases WHERE id = $1 AND user_id = $2`
 	tag, err := r.db.Exec(ctx, query, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete knowledge base: %w", err)

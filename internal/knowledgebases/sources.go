@@ -49,7 +49,7 @@ func (r *Repository) InsertSources(ctx context.Context, knowledgeBaseID string, 
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO knowledge_base_sources (knowledge_base_id, type, title, content)
+		INSERT INTO voice_knowledge_base_sources (knowledge_base_id, type, title, content)
 		VALUES ($1, $2, $3, $4)
 		RETURNING %s
 	`, knowledgeBaseSourceColumns)
@@ -89,7 +89,7 @@ func (r *Repository) InsertSources(ctx context.Context, knowledgeBaseID string, 
 // SetSourceChunkCount records how many vectors a source produced.
 func (r *Repository) SetSourceChunkCount(ctx context.Context, sourceID string, chunkCount int) error {
 	const query = `
-		UPDATE knowledge_base_sources
+		UPDATE voice_knowledge_base_sources
 		SET chunk_count = $2, updated_at = now()
 		WHERE id = $1
 	`
@@ -106,7 +106,7 @@ func (r *Repository) DeleteSources(ctx context.Context, sourceIDs []string) erro
 	if len(sourceIDs) == 0 {
 		return nil
 	}
-	const query = `DELETE FROM knowledge_base_sources WHERE id = ANY($1)`
+	const query = `DELETE FROM voice_knowledge_base_sources WHERE id = ANY($1)`
 	if _, err := r.db.Exec(ctx, query, sourceIDs); err != nil {
 		return fmt.Errorf("delete knowledge base sources: %w", err)
 	}
@@ -122,7 +122,7 @@ func (r *Repository) DeleteSources(ctx context.Context, sourceIDs []string) erro
 func (r *Repository) GetSource(ctx context.Context, knowledgeBaseID, sourceID string) (models.KnowledgeBaseSource, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM knowledge_base_sources
+		FROM voice_knowledge_base_sources
 		WHERE id = $1 AND knowledge_base_id = $2
 	`, knowledgeBaseSourceColumns)
 
@@ -143,7 +143,7 @@ func (r *Repository) GetSource(ctx context.Context, knowledgeBaseID, sourceID st
 // The source's vectors are the caller's to remove: they live in the vector
 // store, which this repository does not reach.
 func (r *Repository) DeleteSource(ctx context.Context, knowledgeBaseID, sourceID string) error {
-	const query = `DELETE FROM knowledge_base_sources WHERE id = $1 AND knowledge_base_id = $2`
+	const query = `DELETE FROM voice_knowledge_base_sources WHERE id = $1 AND knowledge_base_id = $2`
 
 	tag, err := r.db.Exec(ctx, query, sourceID, knowledgeBaseID)
 	if err != nil {
@@ -176,7 +176,7 @@ func (r *Repository) SourcesByKnowledgeBase(ctx context.Context, knowledgeBaseID
 
 	query := fmt.Sprintf(`
 		SELECT knowledge_base_id, %s
-		FROM knowledge_base_sources
+		FROM voice_knowledge_base_sources
 		WHERE knowledge_base_id = ANY($1)
 		ORDER BY created_at, id
 	`, knowledgeBaseSourceColumns)
@@ -214,7 +214,7 @@ func (r *Repository) SourcesByKnowledgeBase(ctx context.Context, knowledgeBaseID
 // knowledge base.
 func (r *Repository) SetStatus(ctx context.Context, userID, knowledgeBaseID, status string) error {
 	const query = `
-		UPDATE knowledge_bases
+		UPDATE voice_knowledge_bases
 		SET status = $3, updated_at = now()
 		WHERE id = $1 AND user_id = $2
 	`

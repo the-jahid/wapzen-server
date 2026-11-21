@@ -1,15 +1,13 @@
 // Package agenttools executes the actions an agent may take mid-conversation.
 //
-// A tool row only defines the action; running one is the same work whether the
-// agent is on a call or in a WhatsApp chat — the arguments the model filled in
-// are checked against the tool's parameters, the request goes out through a
-// client that refuses internal addresses, and the response comes back as text
-// the model reads. That is what lives here, so the voice bridge and the chat
-// responder run an agent's tools the same way rather than each having their own.
+// A tool row only defines the action; running one means checking the arguments
+// the model filled in against the tool's parameters, sending the request
+// through a client that refuses internal addresses, and handing the response
+// back as text the model reads. That is what lives here.
 //
 // What stays with the caller is everything conversation-specific: which tools
 // are offered, how they are declared to the provider, and the actions that only
-// exist in one medium (ending a call has no meaning in a chat).
+// make sense on a call (ending or transferring it).
 package agenttools
 
 import (

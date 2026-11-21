@@ -19,7 +19,7 @@ import (
 )
 
 // Default and bound values for the list query parameters, mirroring the
-// documented schema for GET /v1/tools (page ≥ 1 default 1; limit 1..200 default
+// documented schema for GET /v1/voice/tools (page ≥ 1 default 1; limit 1..200 default
 // 50).
 const (
 	defaultToolPage  = 1
@@ -28,7 +28,7 @@ const (
 )
 
 // toolsListPath is the collection URL rendered into the list links.
-const toolsListPath = "/v1/tools"
+const toolsListPath = "/v1/voice/tools"
 
 // ToolHandler serves the Tools endpoints — the CRUD over the actions an agent
 // can take mid-call. It only defines them; running one is the voice-call
@@ -105,7 +105,7 @@ type toolRequest struct {
 // @Failure      401   {object}  models.APIResponse
 // @Failure      409   {object}  models.APIResponse
 // @Failure      500   {object}  models.APIResponse
-// @Router       /v1/tools [post]
+// @Router       /v1/voice/tools [post]
 func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -182,7 +182,7 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Failure      400    {object}  types.ErrorEnvelope
 // @Failure      401    {object}  models.APIResponse
 // @Failure      500    {object}  models.APIResponse
-// @Router       /v1/tools [get]
+// @Router       /v1/voice/tools [get]
 func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -231,7 +231,7 @@ func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure      401      {object}  models.APIResponse
 // @Failure      404      {object}  models.APIResponse
 // @Failure      500      {object}  models.APIResponse
-// @Router       /v1/tools/{tool_id} [get]
+// @Router       /v1/voice/tools/{tool_id} [get]
 func (h *ToolHandler) Get(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -270,7 +270,7 @@ func (h *ToolHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Failure      404      {object}  models.APIResponse
 // @Failure      409      {object}  models.APIResponse
 // @Failure      500      {object}  models.APIResponse
-// @Router       /v1/tools/{tool_id} [patch]
+// @Router       /v1/voice/tools/{tool_id} [patch]
 func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -378,7 +378,7 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Failure      401      {object}  models.APIResponse
 // @Failure      404      {object}  models.APIResponse
 // @Failure      500      {object}  models.APIResponse
-// @Router       /v1/tools/{tool_id} [delete]
+// @Router       /v1/voice/tools/{tool_id} [delete]
 func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -428,7 +428,7 @@ type toolTestEnvelope struct {
 // @Failure      401      {object}  models.APIResponse
 // @Failure      404      {object}  models.APIResponse
 // @Failure      500      {object}  models.APIResponse
-// @Router       /v1/tools/{tool_id}/test [post]
+// @Router       /v1/voice/tools/{tool_id}/test [post]
 func (h *ToolHandler) Test(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {

@@ -482,8 +482,8 @@ func (e *engine) hangup(c *Call) error {
 }
 
 // reportRelayLatency sends the caller's half of the relay election: one
-// <relaylatency> per candidate relay, carrying the server's own client-to-relay
-// RTT for our allocation and the endpoint address it handed us, addressed to the
+// <relaylatency> for the relay this client binds media to, carrying the server's
+// own client-to-relay RTT and the endpoint address it handed us, addressed to the
 // callee's devices. Outbound calls only, once per call.
 //
 // Without it the callee probes its own candidates, gets no counterpart report,
@@ -509,51 +509,46 @@ func (e *engine) reportRelayLatency(callID string) {
 		return
 	}
 	to, creator, devices := m.from, m.creator, m.peerDevices
-	endpoints := m.relay.endpoints
+	candidates := len(m.relay.endpoints)
+	var bound relayEndpoint
+	if ep := getMediaRelayEndpoint(m.relay); ep != nil {
+		bound = *ep
+	}
 	e.mu.Unlock()
 
-	if to.IsEmpty() || creator.IsEmpty() || len(endpoints) == 0 {
+	if to.IsEmpty() || creator.IsEmpty() || bound.relayName == "" || len(bound.addressBytes) == 0 {
 		return
 	}
 	if m.latencyReported.Swap(true) {
 		return
 	}
 
-	// One report per relay, not per endpoint: a relay is offered once per address
-	// family and the callee elects by name.
-	seen := make(map[string]bool, len(endpoints))
-	sent := 0
-	for i := range endpoints {
-		ep := &endpoints[i]
-		if ep.relayName == "" || len(ep.addressBytes) == 0 || seen[ep.relayName] {
-			continue
-		}
-		seen[ep.relayName] = true
-
-		node := signaling.BuildRelayLatency(&signaling.RelayLatencyParams{
-			CallID:       callID,
-			To:           to,
-			CallCreator:  creator,
-			LatencyMs:    ep.c2rRTT,
-			RelayName:    ep.relayName,
-			AddressBytes: ep.addressBytes,
-			Devices:      devices,
-		}, e.c.log)
-		node.Attrs["id"] = e.signalIO.GenerateRequestID()
-		if err := e.signalIO.SendNode(context.Background(), node); err != nil {
-			e.c.log.Warn().Err(err).
-				Str("call_id", callID).
-				Str("relay_name", ep.relayName).
-				Msg("relay latency report failed")
-			continue
-		}
-		sent++
+	// ASSUMPTION: the callee elects among the relays both sides reported, so
+	// reporting only the relay connectAndAllocate binds to pins the election to
+	// it. Invalidated if a callee ever elects a relay we did not report.
+	node := signaling.BuildRelayLatency(&signaling.RelayLatencyParams{
+		CallID:       callID,
+		To:           to,
+		CallCreator:  creator,
+		LatencyMs:    bound.c2rRTT,
+		RelayName:    bound.relayName,
+		AddressBytes: bound.addressBytes,
+		Devices:      devices,
+	}, e.c.log)
+	node.Attrs["id"] = e.signalIO.GenerateRequestID()
+	if err := e.signalIO.SendNode(context.Background(), node); err != nil {
+		e.c.log.Warn().Err(err).
+			Str("call_id", callID).
+			Str("relay_name", bound.relayName).
+			Msg("relay latency report failed")
+		return
 	}
 	e.c.log.Info().
 		Str("call_id", callID).
-		Int("relays_reported", sent).
-		Int("candidates", len(seen)).
-		Msg("reported relay latencies to callee")
+		Str("relay_name", bound.relayName).
+		Uint32("latency_ms", bound.c2rRTT).
+		Int("candidates", candidates).
+		Msg("reported bound relay latency to callee")
 }
 
 // onRelay records relay data from a relaylatency/transport/ack stanza and starts media

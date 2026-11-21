@@ -9,12 +9,12 @@ import (
 	"whatsapp-ai-caller-server/internal/models"
 )
 
-// A knowledge base is attached by carrying an agent_id that points back at its
-// agent, and the agent's write path replaces that set wholesale. The direct
-// column makes the agent the owner of what it attaches, which is what the
-// cascade in migration 00044 then means: deleting an agent deletes its
-// knowledge bases rather than orphaning them, and a base answers for one agent
-// at a time. (Tools are shared instead, through a join table — see tools.go.)
+// A voice knowledge base (voice_knowledge_bases, never chat's knowledge_bases)
+// is attached by carrying an agent_id that points back at its agent, and the
+// agent's write path replaces that set wholesale. A base answers for one agent
+// at a time. Deleting the agent detaches its bases (ON DELETE SET NULL) rather
+// than deleting them, so their vectors are never orphaned. (Tools are shared
+// instead, through a join table — see tools.go.)
 
 // knowledgeBaseOrder is how an agent's knowledge bases are read back everywhere:
 // oldest first, ties broken by id so the order is stable.
@@ -29,7 +29,7 @@ const knowledgeBaseOrder = "created_at, id"
 // foreign id fails the whole write with ErrKnowledgeBaseNotFound, which reads
 // the same either way so ownership never leaks.
 //
-// Then that it is not already another agent's — voice or chat. Attaching a base
+// Then that it is not already another agent's. Attaching a base
 // another agent answers from would silently take it away mid-conversation, so
 // the request is refused with ErrKnowledgeBaseAttachmentConflict instead, the
 // way a phone number already assigned elsewhere is. Detaching it there first is
@@ -53,7 +53,7 @@ func attachKnowledgeBases(ctx context.Context, tx pgx.Tx, userID, agentID string
 			if !found {
 				return fmt.Errorf("%w: %s", ErrKnowledgeBaseNotFound, id)
 			}
-			if owner.chatAgentID != nil || (owner.agentID != nil && *owner.agentID != agentID) {
+			if owner.agentID != nil && *owner.agentID != agentID {
 				return fmt.Errorf("%w: %s", ErrKnowledgeBaseAttachmentConflict, id)
 			}
 		}
@@ -62,7 +62,7 @@ func attachKnowledgeBases(ctx context.Context, tx pgx.Tx, userID, agentID string
 	// `<> ALL` of an empty array is true for every row, so this detaches the lot
 	// when ids is empty, which is the documented meaning of an empty list.
 	const detachQuery = `
-		UPDATE knowledge_bases
+		UPDATE voice_knowledge_bases
 		SET agent_id = NULL, updated_at = now()
 		WHERE agent_id = $1 AND id <> ALL($2::text[])`
 	if _, err := tx.Exec(ctx, detachQuery, agentID, ids); err != nil {
@@ -74,7 +74,7 @@ func attachKnowledgeBases(ctx context.Context, tx pgx.Tx, userID, agentID string
 	}
 
 	const attachQuery = `
-		UPDATE knowledge_bases
+		UPDATE voice_knowledge_bases
 		SET agent_id = $1, updated_at = now()
 		WHERE id = ANY($2::text[]) AND agent_id IS DISTINCT FROM $1`
 	if _, err := tx.Exec(ctx, attachQuery, agentID, ids); err != nil {
@@ -85,8 +85,7 @@ func attachKnowledgeBases(ctx context.Context, tx pgx.Tx, userID, agentID string
 
 // knowledgeBaseOwner is who currently holds a knowledge base.
 type knowledgeBaseOwner struct {
-	agentID     *string
-	chatAgentID *string
+	agentID *string
 }
 
 // lockKnowledgeBases locks the requested bases that belong to userID and returns
@@ -99,8 +98,8 @@ type knowledgeBaseOwner struct {
 // detached. Locking in id order keeps overlapping requests from deadlocking.
 func lockKnowledgeBases(ctx context.Context, tx pgx.Tx, userID string, ids []string) (map[string]knowledgeBaseOwner, error) {
 	const query = `
-		SELECT id, agent_id, chat_agent_id
-		FROM knowledge_bases
+		SELECT id, agent_id
+		FROM voice_knowledge_bases
 		WHERE id = ANY($1::text[]) AND user_id = $2
 		ORDER BY id
 		FOR UPDATE`
@@ -117,7 +116,7 @@ func lockKnowledgeBases(ctx context.Context, tx pgx.Tx, userID string, ids []str
 			id    string
 			owner knowledgeBaseOwner
 		)
-		if err := rows.Scan(&id, &owner.agentID, &owner.chatAgentID); err != nil {
+		if err := rows.Scan(&id, &owner.agentID); err != nil {
 			return nil, fmt.Errorf("scan knowledge base owner: %w", err)
 		}
 		owners[id] = owner
@@ -132,7 +131,7 @@ func lockKnowledgeBases(ctx context.Context, tx pgx.Tx, userID string, ids []str
 // attached to the agents in $1; see Repository.attachmentIDs.
 const knowledgeBaseIDsQuery = `
 	SELECT agent_id, id
-	FROM knowledge_bases
+	FROM voice_knowledge_bases
 	WHERE agent_id = ANY($1::text[])
 	ORDER BY agent_id, ` + knowledgeBaseOrder
 
@@ -151,7 +150,7 @@ const knowledgeBaseIDsQuery = `
 func (r *Repository) KnowledgeBasesForAgent(ctx context.Context, agentID string) ([]models.AgentKnowledgeBase, error) {
 	query := fmt.Sprintf(`
 		SELECT id, knowledge_base_name, pinecone_namespace
-		FROM knowledge_bases
+		FROM voice_knowledge_bases
 		WHERE agent_id = $1
 			AND pinecone_namespace IS NOT NULL
 			AND pinecone_namespace <> ''
@@ -175,6 +174,53 @@ func (r *Repository) KnowledgeBasesForAgent(ctx context.Context, agentID string)
 		return nil, fmt.Errorf("iterate agent knowledge bases: %w", err)
 	}
 	return bases, nil
+}
+
+// KnowledgeDocumentsForAgent returns the full text of every source in the
+// agent's knowledge bases, in attachment order, but only when all of it
+// together is at most maxChars characters; otherwise (or when there is nothing)
+// it returns none, and the call searches the vector store instead. The size
+// check runs in the same query, so a large knowledge base costs one round trip
+// and never ships its text.
+//
+// Unscoped by user for the same reason as KnowledgeBasesForAgent.
+func (r *Repository) KnowledgeDocumentsForAgent(ctx context.Context, agentID string, maxChars int) ([]models.KnowledgeDocument, error) {
+	if maxChars <= 0 {
+		return nil, nil
+	}
+	const query = `
+		WITH src AS (
+			SELECT kb.knowledge_base_name, kb.created_at AS kb_created, kb.id AS kb_id,
+				s.title, s.content, s.created_at AS source_created, s.id AS source_id
+			FROM voice_knowledge_base_sources s
+			JOIN voice_knowledge_bases kb ON kb.id = s.knowledge_base_id
+			WHERE kb.agent_id = $1
+		), total AS (
+			SELECT COALESCE(SUM(char_length(content)), 0) AS chars FROM src
+		)
+		SELECT src.knowledge_base_name, src.title, src.content
+		FROM src, total
+		WHERE total.chars <= $2
+		ORDER BY src.kb_created, src.kb_id, src.source_created, src.source_id`
+
+	rows, err := r.pool.Query(ctx, query, agentID, maxChars)
+	if err != nil {
+		return nil, fmt.Errorf("select agent knowledge documents: %w", err)
+	}
+	defer rows.Close()
+
+	var documents []models.KnowledgeDocument
+	for rows.Next() {
+		var document models.KnowledgeDocument
+		if err := rows.Scan(&document.KnowledgeBase, &document.Title, &document.Content); err != nil {
+			return nil, fmt.Errorf("scan agent knowledge document: %w", err)
+		}
+		documents = append(documents, document)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate agent knowledge documents: %w", err)
+	}
+	return documents, nil
 }
 
 // groupIDsByAgent reads the next result of an attachment batch — (agent_id, id)

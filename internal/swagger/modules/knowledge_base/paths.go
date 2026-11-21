@@ -34,7 +34,7 @@ func errJSON(desc string, example any) oas.Object {
 }
 
 func resp401() oas.Object {
-	return errJSON("Unauthorized - missing or invalid API key bearer token.", unauthorizedErrorExample())
+	return errJSON("Unauthorized - missing or invalid bearer token.", unauthorizedErrorExample())
 }
 
 func resp404() oas.Object {
@@ -127,8 +127,8 @@ func addKnowledgeBaseSourcesRequestBody() oas.Object {
 	}
 }
 
-func apiKeySecurity() []any {
-	return []any{oas.Object{"apiKeyBearer": []any{}}}
+func bearerSecurity() []any {
+	return []any{oas.Object{"bearer": []any{}}}
 }
 
 func knowledgeBaseIDParam() oas.Object {
@@ -180,8 +180,8 @@ func listKnowledgeBasesOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listKnowledgeBases",
 		"summary":     "List Knowledge Bases",
-		"description": "Returns a paginated list of the knowledge bases owned by the authenticated API key owner, newest first, each with its indexed sources. A knowledge base that has had no sources added carries no `knowledge_base_sources`.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a paginated list of the knowledge bases owned by the authenticated user, newest first, each with its indexed sources. A knowledge base that has had no sources added carries no `knowledge_base_sources`.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{pageParam(), limitParam()},
 		"responses": oas.Object{
 			"200": okJSON("A page of knowledge bases.", "ListKnowledgeBasesResponse", listKnowledgeBasesResponseExample()),
@@ -198,8 +198,8 @@ func createKnowledgeBaseOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "createKnowledgeBase",
 		"summary":     "Create Knowledge Base",
-		"description": "Creates a knowledge base owned by the authenticated API key owner. `knowledge_base_name` is the only required field — every other field is optional. Omitted `max_chunk_size`, `min_chunk_size` and `enable_auto_refresh` fall back to their defaults. The vector `namespace_id` is assigned here and is stable for the knowledge base's lifetime. Note: sources supplied to this endpoint are validated but not indexed — a newly created knowledge base is always empty. Add its content with POST /v1/knowledge-base/{knowledge_base_id}/sources, which does index what it is given.",
-		"security":    apiKeySecurity(),
+		"description": "Creates a knowledge base owned by the authenticated user. `knowledge_base_name` is the only required field — every other field is optional. Omitted `max_chunk_size`, `min_chunk_size` and `enable_auto_refresh` fall back to their defaults. The vector `namespace_id` is assigned here and is stable for the knowledge base's lifetime. Note: sources supplied to this endpoint are validated but not indexed — a newly created knowledge base is always empty. Add its content with POST /v1/voice/knowledge-base/{knowledge_base_id}/sources, which does index what it is given.",
+		"security":    bearerSecurity(),
 		"requestBody": requestBodyNamedExamples("The knowledge base configuration to create. Only `knowledge_base_name` is required.", "CreateKnowledgeBaseRequest", oas.Object{
 			"minimal": oas.Object{
 				"summary": "Minimal: only the required knowledge_base_name",
@@ -227,8 +227,8 @@ func getKnowledgeBaseOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "getKnowledgeBase",
 		"summary":     "Get Knowledge Base",
-		"description": "Returns a single knowledge base by id, including its indexed sources, scoped to the authenticated API key owner. `knowledge_base_sources` is omitted when none have been added.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a single knowledge base by id, including its indexed sources, scoped to the authenticated user. `knowledge_base_sources` is omitted when none have been added.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{knowledgeBaseIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The requested knowledge base resource.", "GetKnowledgeBaseResponse", getKnowledgeBaseResponseExample()),
@@ -246,8 +246,8 @@ func updateKnowledgeBaseOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "updateKnowledgeBase",
 		"summary":     "Update Knowledge Base",
-		"description": "Applies a partial update to a knowledge base owned by the authenticated API key owner. Only `knowledge_base_name` and the indexing settings may be changed; at least one field must be supplied and omitted fields keep their stored value. Chunk sizes are checked against the stored row, so supplying only one of them can never leave `min_chunk_size` above `max_chunk_size`. Changing the chunking does not re-index sources that are already indexed.",
-		"security":    apiKeySecurity(),
+		"description": "Applies a partial update to a knowledge base owned by the authenticated user. Only `knowledge_base_name` and the indexing settings may be changed; at least one field must be supplied and omitted fields keep their stored value. Chunk sizes are checked against the stored row, so supplying only one of them can never leave `min_chunk_size` above `max_chunk_size`. Changing the chunking does not re-index sources that are already indexed.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{knowledgeBaseIDParam()},
 		"requestBody": requestBodyNamedExamples("The fields to change. At least one is required.", "UpdateKnowledgeBaseRequest", oas.Object{
 			"settings": oas.Object{
@@ -276,8 +276,8 @@ func deleteKnowledgeBaseOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteKnowledgeBase",
 		"summary":     "Delete Knowledge Base",
-		"description": "Deletes a knowledge base by id, scoped to the authenticated API key owner, together with all of its indexed sources and every vector written under its namespace. A knowledge base belongs to at most one agent, so the agent holding it — if any — simply stops answering from it.",
-		"security":    apiKeySecurity(),
+		"description": "Deletes a knowledge base by id, scoped to the authenticated user, together with all of its indexed sources and every vector written under its namespace. A knowledge base belongs to at most one agent, so the agent holding it — if any — simply stops answering from it.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{knowledgeBaseIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The knowledge base was deleted.", "DeleteKnowledgeBaseResponse", deleteKnowledgeBaseResponseExample()),
@@ -296,7 +296,7 @@ func addKnowledgeBaseSourcesOperation() oas.Object {
 		"operationId": "addKnowledgeBaseSources",
 		"summary":     "Add Knowledge Base Sources",
 		"description": "Adds sources to an existing knowledge base and indexes them into its vector namespace. Sources arrive one of two ways: a JSON body carries raw texts in `knowledge_base_texts`, and a `multipart/form-data` body uploads documents in repeated `files` parts. An upload is extracted **server-side** — nothing is parsed by the client — so the indexed text is the text this API read out of the document; name the sources with repeated `titles` parts, where the nth title belongs to the nth file and a blank or missing one falls back to the filename. Either way the resulting text is chunked using the knowledge base's own `max_chunk_size` and `min_chunk_size`, embedded, and written under its `namespace_id` with the source `title` as the record id — so records are listed in the vector store under the names they were given. A source long enough to split stores its first chunk under the title and the rest under `<title>#2`, `<title>#3` and so on. Titles must therefore be printable ASCII, must not contain `#`, and must be unique within the knowledge base; a duplicate returns 409. Indexing runs inside the request, so the knowledge base comes back already at status complete with the new sources and their chunk counts attached — there is nothing to poll. The call is all-or-nothing: one unreadable file fails the whole upload, and if indexing fails the sources are removed again and the knowledge base is left exactly as it was, at status error. `knowledge_base_urls` is still rejected until the scraper lands, and so is the JSON `knowledge_base_files` (`file_url`) form — a file is uploaded here, not fetched from elsewhere.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{knowledgeBaseIDParam()},
 		"requestBody": addKnowledgeBaseSourcesRequestBody(),
 		"responses": oas.Object{
@@ -320,7 +320,7 @@ func deleteKnowledgeBaseSourceOperation() oas.Object {
 		"operationId": "deleteKnowledgeBaseSource",
 		"summary":     "Delete Knowledge Base Source",
 		"description": "Removes a single source from a knowledge base, together with every vector it wrote into the knowledge base's namespace — the chunks stored under its `title` and under `<title>#2`, `<title>#3` and so on. The knowledge base itself, its other sources and its chunking configuration are left untouched, and nothing is re-indexed. The vectors are deleted before the source row: if the vector store cannot be reached the source stays in place, to be retried, rather than leaving behind chunks that agents would go on retrieving from a source that has supposedly been deleted.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{knowledgeBaseIDParam(), sourceIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The source was deleted.", "DeleteKnowledgeBaseSourceResponse", deleteKnowledgeBaseSourceResponseExample()),
@@ -337,7 +337,7 @@ func deleteKnowledgeBaseSourceOperation() oas.Object {
 
 // knowledgeBasePaths returns the path-item map to merge into document.paths.
 func knowledgeBasePaths() oas.Object {
-	collection := oas.APIV1Prefix + "/knowledge-base"
+	collection := oas.APIV1Prefix + "/voice/knowledge-base"
 	item := collection + "/{knowledge_base_id}"
 	sources := item + "/sources"
 	source := sources + "/{source_id}"

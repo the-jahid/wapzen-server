@@ -109,7 +109,7 @@ func TestDecodeCreateKnowledgeBaseRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base", strings.NewReader(tt.body))
+			r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base", strings.NewReader(tt.body))
 			w := httptest.NewRecorder()
 
 			req, ok := decodeCreateKnowledgeBaseRequest(w, r)
@@ -144,7 +144,7 @@ func TestDecodeCreateKnowledgeBaseRequestTextLimit(t *testing.T) {
 	}
 	body := `{"knowledge_base_name":"KB","knowledge_base_texts":[` + strings.Join(texts, ",") + `]}`
 
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base", strings.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	if _, ok := decodeCreateKnowledgeBaseRequest(w, r); ok {
@@ -162,7 +162,7 @@ func TestDecodeCreateKnowledgeBaseRequestTextLimit(t *testing.T) {
 // order — they are what gets indexed, so losing them here would be the original
 // bug in a new place.
 func TestDecodeCreateKnowledgeBaseRequestKeepsTexts(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base", strings.NewReader(
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base", strings.NewReader(
 		`{"knowledge_base_name":"KB","knowledge_base_texts":[{"title":"  Refund policy  ","text":"  Refunds take five days.  "}]}`))
 	w := httptest.NewRecorder()
 
@@ -181,7 +181,7 @@ func TestDecodeCreateKnowledgeBaseRequestKeepsTexts(t *testing.T) {
 // Optional settings absent from the body must stay nil so the insert falls back
 // to the column defaults rather than storing a zero value.
 func TestDecodeCreateKnowledgeBaseRequestLeavesOptionalSettingsNil(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base",
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base",
 		strings.NewReader(`{"knowledge_base_name":"  Sample KB  "}`))
 	w := httptest.NewRecorder()
 

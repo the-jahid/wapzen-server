@@ -81,25 +81,25 @@ func TestParseKnowledgeBaseListQuery(t *testing.T) {
 }
 
 // TestBuildKnowledgeBaseListLinksUsesCollectionPath pins the knowledge base
-// collection links to the /v1/knowledge-base base path with page-based query
+// collection links to the /v1/voice/knowledge-base base path with page-based query
 // parameters, matching the documented listKnowledgeBases example.
 func TestBuildKnowledgeBaseListLinksUsesCollectionPath(t *testing.T) {
 	links := buildListLinks(knowledgeBasesListPath, 2, 20, 45, nil)
 
-	if links.Self != "/v1/knowledge-base?page=2&limit=20" {
-		t.Errorf("self = %q, want /v1/knowledge-base?page=2&limit=20", links.Self)
+	if links.Self != "/v1/voice/knowledge-base?page=2&limit=20" {
+		t.Errorf("self = %q, want /v1/voice/knowledge-base?page=2&limit=20", links.Self)
 	}
-	if links.First != "/v1/knowledge-base?page=1&limit=20" {
-		t.Errorf("first = %q, want /v1/knowledge-base?page=1&limit=20", links.First)
+	if links.First != "/v1/voice/knowledge-base?page=1&limit=20" {
+		t.Errorf("first = %q, want /v1/voice/knowledge-base?page=1&limit=20", links.First)
 	}
-	if links.Last != "/v1/knowledge-base?page=3&limit=20" {
-		t.Errorf("last = %q, want /v1/knowledge-base?page=3&limit=20", links.Last)
+	if links.Last != "/v1/voice/knowledge-base?page=3&limit=20" {
+		t.Errorf("last = %q, want /v1/voice/knowledge-base?page=3&limit=20", links.Last)
 	}
-	if links.Previous == nil || *links.Previous != "/v1/knowledge-base?page=1&limit=20" {
-		t.Errorf("previous = %v, want /v1/knowledge-base?page=1&limit=20", links.Previous)
+	if links.Previous == nil || *links.Previous != "/v1/voice/knowledge-base?page=1&limit=20" {
+		t.Errorf("previous = %v, want /v1/voice/knowledge-base?page=1&limit=20", links.Previous)
 	}
-	if links.Next == nil || *links.Next != "/v1/knowledge-base?page=3&limit=20" {
-		t.Errorf("next = %v, want /v1/knowledge-base?page=3&limit=20", links.Next)
+	if links.Next == nil || *links.Next != "/v1/voice/knowledge-base?page=3&limit=20" {
+		t.Errorf("next = %v, want /v1/voice/knowledge-base?page=3&limit=20", links.Next)
 	}
 }
 
@@ -108,8 +108,8 @@ func TestBuildKnowledgeBaseListLinksUsesCollectionPath(t *testing.T) {
 func TestBuildKnowledgeBaseListLinksOnEmptyCollection(t *testing.T) {
 	links := buildListLinks(knowledgeBasesListPath, 1, 20, 0, nil)
 
-	if links.Last != "/v1/knowledge-base?page=1&limit=20" {
-		t.Errorf("last = %q, want /v1/knowledge-base?page=1&limit=20", links.Last)
+	if links.Last != "/v1/voice/knowledge-base?page=1&limit=20" {
+		t.Errorf("last = %q, want /v1/voice/knowledge-base?page=1&limit=20", links.Last)
 	}
 	if links.Previous != nil || links.Next != nil {
 		t.Errorf("previous/next = %v/%v, want nil/nil", links.Previous, links.Next)

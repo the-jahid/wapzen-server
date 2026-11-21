@@ -4,8 +4,8 @@ import "net/http"
 
 // DefaultAllowedOrigin is the browser origin allowed to call the API when no
 // other origins are configured. Requests without an Origin header (servers,
-// curl, API-key integrations) are not affected; CORS is a browser rule, and
-// access is still gated by API keys and Clerk tokens.
+// curl, server-to-server) are not affected; CORS is a browser rule, and
+// access is still gated by Clerk tokens.
 const DefaultAllowedOrigin = "https://wapzen.io"
 
 // CORS lets the WapZen web app call the API from a browser, from any of

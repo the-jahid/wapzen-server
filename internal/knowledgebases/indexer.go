@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/pinecone"
@@ -182,6 +183,13 @@ func (ix *Indexer) PurgeNamespace(ctx context.Context, kb models.KnowledgeBase) 
 		return ErrIndexingNotConfigured
 	}
 	if kb.NamespaceID == nil || *kb.NamespaceID == "" {
+		return nil
+	}
+	// Only a namespace that belongs to this one knowledge base ("kb_<id>") is
+	// dropped. whiskey-bailey-server, which shares this database, files every
+	// knowledge base of an account under one "user_<user id>" namespace;
+	// dropping that would wipe all of the account's other knowledge bases.
+	if !strings.HasPrefix(*kb.NamespaceID, "kb_") {
 		return nil
 	}
 	return ix.vectors.DeleteNamespace(ctx, *kb.NamespaceID)

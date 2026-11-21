@@ -16,10 +16,10 @@ func TestPhoneNumberRoutesRequireUser(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{name: "list", method: http.MethodGet, path: "/v1/phone-number"},
-		{name: "login", method: http.MethodPost, path: "/v1/phone-number/login", body: `{}`},
-		{name: "get", method: http.MethodGet, path: "/v1/phone-number/phone_123"},
-		{name: "logout", method: http.MethodPost, path: "/v1/phone-number/logout", body: `{"phone_number_id":"phone_123"}`},
+		{name: "list", method: http.MethodGet, path: "/v1/voice/phone-number"},
+		{name: "login", method: http.MethodPost, path: "/v1/voice/phone-number/login", body: `{}`},
+		{name: "get", method: http.MethodGet, path: "/v1/voice/phone-number/phone_123"},
+		{name: "logout", method: http.MethodPost, path: "/v1/voice/phone-number/logout", body: `{"phone_number_id":"phone_123"}`},
 	}
 
 	for _, tt := range tests {

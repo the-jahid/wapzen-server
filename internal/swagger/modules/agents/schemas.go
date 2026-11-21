@@ -16,10 +16,8 @@ import (
 func createAgentRequestProperties() oas.Object {
 	root := oas.Obj().
 		P("agent", agentSectionSchema()).
-		P("model", modelSectionSchema()).
 		P("prompt", promptSectionSchema()).
 		P("voice", voiceSectionSchema()).
-		P("transcriber", transcriberSectionSchema()).
 		P("post_call", postCallSectionSchema()).
 		P("knowledge_base", knowledgeBaseSectionSchema()).
 		P("tools", toolsSectionSchema())
@@ -32,19 +30,9 @@ func agentSectionSchema() *oas.Schema {
 		P("name", oas.Str().Desc("Human-friendly display name for the agent.").Example("My Agent")).
 		P("language", oas.Str().Desc("Primary language as a BCP-47 tag.").Default("en-US").Example("en-US")).
 		P("timezone", oas.Str().Nullable().Desc("IANA timezone used for scheduling and timestamps.").Example(nil)).
-		P("phone_number_id", oas.Str().Nullable().Desc("User-owned phone number assigned to this outbound agent. A phone number can be assigned to only one agent.").Example(nil)).
-		P("call_direction", oas.Str().Desc("Allowed call direction for this agent.").
-			Enum(constants.CallDirectionOptions).Default("outbound").Example("outbound")).
+		P("phone_number_id", oas.Str().Nullable().Desc("User-owned phone number this agent answers and places calls on. A phone number can be assigned to only one agent.").Example(nil)).
 		P("status", oas.Str().Desc("Lifecycle status. Defaults to active when omitted.").
 			Enum(constants.ResourceStatusOptions).Default("active").Example("active"))
-}
-
-func modelSectionSchema() *oas.Schema {
-	return oas.Obj().Desc("Conversational LLM configuration.").
-		P("provider", oas.Str().Desc("LLM provider.").Enum(constants.LLMProviderOptions).Default("openai").Example("openai")).
-		P("name", oas.Str().Desc("Provider-specific model identifier.").Default("gpt-4.1-mini").Example("gpt-4.1-mini")).
-		P("temperature", oas.Num().Desc("Sampling temperature. Higher is more creative.").
-			Min(0.1).Max(1).Default(0.3).Example(0.3))
 }
 
 func promptSectionSchema() *oas.Schema {
@@ -62,30 +50,13 @@ func promptSectionSchema() *oas.Schema {
 }
 
 func voiceSectionSchema() *oas.Schema {
-	return oas.Obj().Desc("Text-to-speech configuration.").
-		P("provider", oas.Str().Desc("Live-call pipeline: native OpenAI Realtime, request-based OpenAI, or ElevenLabs.").Enum(constants.VoiceProviderOptions).Default("openai_realtime").Example("openai_realtime")).
-		P("elevenlabs", oas.Obj().Desc("ElevenLabs-specific voice selection.").
-			P("voice_id", oas.Str().Desc("ElevenLabs voice identifier.").Default("DODLEQrClDo8wCz460ld").Example("DODLEQrClDo8wCz460ld")).
-			P("voice_name", oas.Str().Desc("Human-friendly display name of the selected voice.").Default("Lauren").Example("Lauren")).
-			P("voice_model", oas.Str().Desc("ElevenLabs voice model.").Enum(constants.VoiceModelElevenLabsOptions).Default("eleven_flash_v2_5").Example("eleven_flash_v2_5"))).
-		P("openai", oas.Obj().Desc("OpenAI-specific voice selection.").
-			P("voice_id", oas.Str().Desc("OpenAI Audio Speech voice used for calls.").Enum(constants.OpenAIVoiceOptions).Default("alloy").Example("alloy")).
+	return oas.Obj().Desc("Live-call voice. Every call runs on one OpenAI Realtime speech-to-speech session.").
+		P("openai", oas.Obj().Desc("OpenAI Realtime voice selection.").
+			P("voice_id", oas.Str().Desc("Realtime voice used for calls.").Enum(constants.OpenAIVoiceOptions).Default("alloy").Example("alloy")).
 			P("voice_name", oas.Str().Desc("Human-friendly display name of the selected voice.").Default("Alloy").Example("Alloy")).
-			P("voice_model", oas.Str().Desc("OpenAI Audio Speech model used for live calls.").Enum(constants.VoiceModelOpenAIOptions).Default("tts-1").Example("tts-1")).
-			P("realtime_model", oas.Str().Desc("Native speech-to-speech model used when voice.provider is openai_realtime.").Enum(constants.OpenAIRealtimeModelOptions).Default("gpt-realtime-2.1-mini").Example("gpt-realtime-2.1-mini")).
-			P("instructions", oas.Str().Nullable().Desc("Style/delivery instructions for the OpenAI voice.").Example(nil)).
+			P("realtime_model", oas.Str().Desc("Speech-to-speech model that hears, thinks and speaks on the call.").Enum(constants.OpenAIRealtimeModelOptions).Default("gpt-realtime-2.1-mini").Example("gpt-realtime-2.1-mini")).
 			P("speed", oas.Num().Desc("Spoken rate; 1 is the model's normal pace.").Min(0.25).Max(1.5).Default(1).Example(1)).
 			P("volume", oas.Num().Desc("Playback gain applied to the agent's audio; 1 leaves it unchanged.").Min(0).Max(2).Default(1).Example(1)))
-}
-
-func transcriberSectionSchema() *oas.Schema {
-	return oas.Obj().Desc("Speech-to-text configuration. The concrete model lives in the provider-specific sub-object.").
-		P("provider", oas.Str().Desc("Transcriber provider.").Enum(constants.TranscriberProviderOptions).Default("openai").Example("openai")).
-		P("language", oas.Str().Desc("Expected spoken language.").Default("en").Example("en")).
-		P("openai", oas.Obj().Desc("OpenAI-specific transcription settings.").
-			P("model", oas.Str().Desc("OpenAI transcription model.").Enum(constants.TranscriberModelOpenAIOptions).Default("gpt-4o-transcribe").Example("gpt-4o-transcribe"))).
-		P("elevenlabs", oas.Obj().Desc("ElevenLabs-specific transcription settings.").
-			P("model", oas.Str().Desc("ElevenLabs transcription model.").Enum(constants.TranscriberModelElevenLabsOptions).Default("scribe_v1").Example("scribe_v1")))
 }
 
 func postCallSectionSchema() *oas.Schema {

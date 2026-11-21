@@ -20,12 +20,10 @@ const defaultPineconeIndexDimension = 3072
 // Config holds all environment-driven settings for the server.
 type Config struct {
 	Port                      string   // HTTP port the server listens on (e.g. "8080").
-	AppEnv                    string   // Application environment (e.g. "development", "production").
 	DatabaseURL               string   // PostgreSQL connection string.
 	ClerkSecretKey            string   // Clerk backend API secret key.
 	ClerkWebhookSigningSecret string   // Svix signing secret for Clerk webhooks.
 	OpenAIAPIKey              string   // OpenAI API key used by voice call providers.
-	ElevenLabsAPIKey          string   // ElevenLabs API key used by voice call providers.
 	CORSAllowedOrigins        []string // Browser origins allowed to call the API (comma-separated CORS_ALLOWED_ORIGINS); empty means https://wapzen.io.
 	VerboseLogs               bool     // VERBOSE_LOGS=true prints diagnostic logs (every request, WhatsApp internals); otherwise only user activity is logged.
 
@@ -52,12 +50,10 @@ func Load() *Config {
 
 	return &Config{
 		Port:                      getEnv("PORT", "8080"),
-		AppEnv:                    getEnv("APP_ENV", "development"),
 		DatabaseURL:               getEnv("DATABASE_URL", ""),
 		ClerkSecretKey:            getEnv("CLERK_SECRET_KEY", ""),
 		ClerkWebhookSigningSecret: getEnv("CLERK_WEBHOOK_SIGNING_SECRET", ""),
 		OpenAIAPIKey:              openAIAPIKey,
-		ElevenLabsAPIKey:          getEnv("ELEVENLABS_API_KEY", ""),
 		CORSAllowedOrigins:        getEnvList("CORS_ALLOWED_ORIGINS"),
 		VerboseLogs:               getEnvBool("VERBOSE_LOGS"),
 		OpenAIEmbeddingModel:      getEnv("OPENAI_EMBEDDING_MODEL", embeddings.DefaultModel),

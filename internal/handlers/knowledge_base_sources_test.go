@@ -103,7 +103,7 @@ func TestDecodeAddKnowledgeBaseSourcesRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base/kb-1/sources", strings.NewReader(tt.body))
+			r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base/kb-1/sources", strings.NewReader(tt.body))
 			w := httptest.NewRecorder()
 
 			req, ok := decodeAddKnowledgeBaseSourcesRequest(w, r)
@@ -137,7 +137,7 @@ func TestDecodeAddKnowledgeBaseSourcesRequestTextLimit(t *testing.T) {
 	}
 	body := `{"knowledge_base_texts":[` + strings.Join(entries, ",") + `]}`
 
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base/kb-1/sources", strings.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base/kb-1/sources", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	if _, ok := decodeAddKnowledgeBaseSourcesRequest(w, r); ok {
@@ -154,7 +154,7 @@ func TestDecodeAddKnowledgeBaseSourcesRequestTextLimit(t *testing.T) {
 // The stored title and content are what gets indexed, so surrounding
 // whitespace is trimmed before either reaches the database.
 func TestDecodeAddKnowledgeBaseSourcesRequestTrims(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/v1/knowledge-base/kb-1/sources",
+	r := httptest.NewRequest(http.MethodPost, "/v1/voice/knowledge-base/kb-1/sources",
 		strings.NewReader(`{"knowledge_base_texts":[{"title":"  Refund policy  ","text":"  Refunds take 14 days.  "}]}`))
 	w := httptest.NewRecorder()
 

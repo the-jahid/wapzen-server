@@ -53,7 +53,7 @@ type addKnowledgeBaseSourcesRequest struct {
 //
 // AddSources godoc
 // @Summary      Add Knowledge Base Sources
-// @Description  Adds sources to an existing knowledge base owned by the authenticated API key owner and indexes them into its vector-store namespace. Sources arrive one of two ways. A JSON body carries raw texts in knowledge_base_texts. A multipart/form-data body uploads documents in repeated "files" parts, optionally named by repeated "titles" parts (the nth title belongs to the nth file, and a blank or missing one falls back to the filename); the server extracts the text from each upload — .txt, .md, .csv, .tsv, .json, .yaml, .xml, .log, .rst, .html, .docx and .pdf are read — so nothing is parsed client-side. Either way the resulting text is chunked using the knowledge base's own max_chunk_size and min_chunk_size, embedded, and written under its namespace_id with the source title as the record id; a source that splits into several chunks stores the first under the title and the rest under "<title>#2", "<title>#3" and so on. Titles must be printable ASCII, must not contain '#', and must be unique within the knowledge base. Indexing runs synchronously, so the knowledge base is returned already at status complete with the new sources attached. knowledge_base_urls and the JSON knowledge_base_files (file_url) form are still rejected: urls have no fetcher yet, and a file is uploaded rather than linked. The request is all-or-nothing — a failure to index leaves the knowledge base exactly as it was, at status error.
+// @Description  Adds sources to an existing knowledge base owned by the authenticated user and indexes them into its vector-store namespace. Sources arrive one of two ways. A JSON body carries raw texts in knowledge_base_texts. A multipart/form-data body uploads documents in repeated "files" parts, optionally named by repeated "titles" parts (the nth title belongs to the nth file, and a blank or missing one falls back to the filename); the server extracts the text from each upload — .txt, .md, .csv, .tsv, .json, .yaml, .xml, .log, .rst, .html, .docx and .pdf are read — so nothing is parsed client-side. Either way the resulting text is chunked using the knowledge base's own max_chunk_size and min_chunk_size, embedded, and written under its namespace_id with the source title as the record id; a source that splits into several chunks stores the first under the title and the rest under "<title>#2", "<title>#3" and so on. Titles must be printable ASCII, must not contain '#', and must be unique within the knowledge base. Indexing runs synchronously, so the knowledge base is returned already at status complete with the new sources attached. knowledge_base_urls and the JSON knowledge_base_files (file_url) form are still rejected: urls have no fetcher yet, and a file is uploaded rather than linked. The request is all-or-nothing — a failure to index leaves the knowledge base exactly as it was, at status error.
 // @Tags         Knowledge Base
 // @Accept       json
 // @Accept       multipart/form-data
@@ -72,7 +72,7 @@ type addKnowledgeBaseSourcesRequest struct {
 // @Failure      422                {object}  models.APIResponse
 // @Failure      500                {object}  models.APIResponse
 // @Failure      503                {object}  models.APIResponse
-// @Router       /v1/knowledge-base/{knowledge_base_id}/sources [post]
+// @Router       /v1/voice/knowledge-base/{knowledge_base_id}/sources [post]
 func (h *KnowledgeBaseHandler) AddSources(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -214,7 +214,7 @@ type knowledgeBaseSourceDeleteData struct {
 //
 // DeleteSource godoc
 // @Summary      Delete Knowledge Base Source
-// @Description  Removes a single source from a knowledge base owned by the authenticated API key owner, together with every vector it wrote into the knowledge base's namespace. The knowledge base itself and its other sources are left untouched, and its chunking configuration is not changed. The vectors are removed before the source row, so a failure to reach the vector store leaves the source in place to be retried rather than orphaning chunks that agents would keep retrieving. Deleting a source that does not exist, or one belonging to another knowledge base, returns 404.
+// @Description  Removes a single source from a knowledge base owned by the authenticated user, together with every vector it wrote into the knowledge base's namespace. The knowledge base itself and its other sources are left untouched, and its chunking configuration is not changed. The vectors are removed before the source row, so a failure to reach the vector store leaves the source in place to be retried rather than orphaning chunks that agents would keep retrieving. Deleting a source that does not exist, or one belonging to another knowledge base, returns 404.
 // @Tags         Knowledge Base
 // @Produce      json
 // @Security     BearerAuth
@@ -227,7 +227,7 @@ type knowledgeBaseSourceDeleteData struct {
 // @Failure      500                {object}  models.APIResponse
 // @Failure      502                {object}  models.APIResponse
 // @Failure      503                {object}  models.APIResponse
-// @Router       /v1/knowledge-base/{knowledge_base_id}/sources/{source_id} [delete]
+// @Router       /v1/voice/knowledge-base/{knowledge_base_id}/sources/{source_id} [delete]
 func (h *KnowledgeBaseHandler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {

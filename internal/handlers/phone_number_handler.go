@@ -89,7 +89,7 @@ type phoneNumberLinks struct {
 // @Success      200  {object}  handlers.phoneNumberListEnvelope
 // @Failure      401  {object}  models.APIResponse
 // @Failure      500  {object}  models.APIResponse
-// @Router       /v1/phone-number [get]
+// @Router       /v1/voice/phone-number [get]
 func (h *PhoneNumberHandler) List(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -131,7 +131,7 @@ func (h *PhoneNumberHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure      401   {object}  models.APIResponse
 // @Failure      409   {object}  models.APIResponse
 // @Failure      500   {object}  models.APIResponse
-// @Router       /v1/phone-number/login [post]
+// @Router       /v1/voice/phone-number/login [post]
 func (h *PhoneNumberHandler) Login(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -208,7 +208,7 @@ func (h *PhoneNumberHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Phone number login started successfully",
 		Data:    phoneNumber,
-		Links:   phoneNumberLinks{Self: "/v1/phone-number/" + phoneNumber.ID},
+		Links:   phoneNumberLinks{Self: "/v1/voice/phone-number/" + phoneNumber.ID},
 	})
 }
 
@@ -262,7 +262,7 @@ func (h *PhoneNumberHandler) restartLogin(w http.ResponseWriter, r *http.Request
 		Success: true,
 		Message: message,
 		Data:    phoneNumber,
-		Links:   phoneNumberLinks{Self: "/v1/phone-number/" + phoneNumber.ID},
+		Links:   phoneNumberLinks{Self: "/v1/voice/phone-number/" + phoneNumber.ID},
 	})
 }
 
@@ -280,7 +280,7 @@ func (h *PhoneNumberHandler) restartLogin(w http.ResponseWriter, r *http.Request
 // @Failure      401              {object}  models.APIResponse
 // @Failure      404              {object}  models.APIResponse
 // @Failure      500              {object}  models.APIResponse
-// @Router       /v1/phone-number/{phone_number_id} [get]
+// @Router       /v1/voice/phone-number/{phone_number_id} [get]
 func (h *PhoneNumberHandler) Get(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -308,7 +308,7 @@ func (h *PhoneNumberHandler) Get(w http.ResponseWriter, r *http.Request) {
 					Success: true,
 					Message: "Phone number retrieved successfully",
 					Data:    draft,
-					Links:   phoneNumberLinks{Self: "/v1/phone-number/" + draft.ID},
+					Links:   phoneNumberLinks{Self: "/v1/voice/phone-number/" + draft.ID},
 				})
 				return
 			}
@@ -329,7 +329,7 @@ func (h *PhoneNumberHandler) Get(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Phone number retrieved successfully",
 		Data:    phoneNumber,
-		Links:   phoneNumberLinks{Self: "/v1/phone-number/" + phoneNumber.ID},
+		Links:   phoneNumberLinks{Self: "/v1/voice/phone-number/" + phoneNumber.ID},
 	})
 }
 
@@ -349,7 +349,7 @@ func (h *PhoneNumberHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Failure      401   {object}  models.APIResponse
 // @Failure      404   {object}  models.APIResponse
 // @Failure      500   {object}  models.APIResponse
-// @Router       /v1/phone-number/logout [post]
+// @Router       /v1/voice/phone-number/logout [post]
 func (h *PhoneNumberHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {

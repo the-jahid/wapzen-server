@@ -35,13 +35,7 @@ func (s *deletePhoneNumberSpy) DeleteByUserDevice(_ context.Context, userID, pho
 
 func TestDeleteLoggedOutPhoneNumberIsScopedToSessionNumber(t *testing.T) {
 	repo := &deletePhoneNumberSpy{rowJID: "15550001111:7@s.whatsapp.net"}
-	m := &Manager{
-		repo: repo,
-		aiHistory: map[string][]aiMessage{
-			"agent_1|phone_123|peer_1": {{Role: "user", Content: "delete me"}},
-			"agent_1|phone_456|peer_1": {{Role: "user", Content: "keep me"}},
-		},
-	}
+	m := &Manager{repo: repo}
 	session := &loginSession{userID: "user_123", phoneNumberID: "phone_123", deviceJID: "15550001111:7@s.whatsapp.net"}
 
 	if err := m.deleteLoggedOutPhoneNumber(session); err != nil {
@@ -50,12 +44,6 @@ func TestDeleteLoggedOutPhoneNumberIsScopedToSessionNumber(t *testing.T) {
 	if repo.calls != 1 || repo.userID != "user_123" || repo.phoneNumberID != "phone_123" || repo.waJID != "15550001111:7@s.whatsapp.net" {
 		t.Fatalf("DeleteByUserDevice calls=%d user=%q phone=%q jid=%q", repo.calls, repo.userID, repo.phoneNumberID, repo.waJID)
 	}
-	if _, ok := m.aiHistory["agent_1|phone_123|peer_1"]; ok {
-		t.Fatal("logged-out number's conversation history was not deleted")
-	}
-	if _, ok := m.aiHistory["agent_1|phone_456|peer_1"]; !ok {
-		t.Fatal("another number's conversation history was deleted")
-	}
 }
 
 // A relink repoints the row to the new device before unlinking the old one.
@@ -63,19 +51,14 @@ func TestDeleteLoggedOutPhoneNumberIsScopedToSessionNumber(t *testing.T) {
 // delete the relinked number.
 func TestLoggedOutOldDeviceKeepsRelinkedNumber(t *testing.T) {
 	repo := &deletePhoneNumberSpy{rowJID: "15550001111:9@s.whatsapp.net"}
-	m := &Manager{
-		repo: repo,
-		aiHistory: map[string][]aiMessage{
-			"agent_1|phone_123|peer_1": {{Role: "user", Content: "keep me"}},
-		},
-	}
+	m := &Manager{repo: repo}
 	session := &loginSession{userID: "user_123", phoneNumberID: "phone_123", deviceJID: "15550001111:7@s.whatsapp.net"}
 
 	if err := m.deleteLoggedOutPhoneNumber(session); err != nil {
 		t.Fatalf("deleteLoggedOutPhoneNumber() error = %v", err)
 	}
-	if _, ok := m.aiHistory["agent_1|phone_123|peer_1"]; !ok {
-		t.Fatal("the relinked number's conversation history was deleted")
+	if repo.calls != 1 || repo.waJID != "15550001111:7@s.whatsapp.net" {
+		t.Fatalf("DeleteByUserDevice calls=%d jid=%q, want one guarded delete for the old device", repo.calls, repo.waJID)
 	}
 }
 

@@ -16,7 +16,6 @@ import (
 	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
 
 	"whatsapp-ai-caller-server/internal/activity"
-	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/users"
 )
@@ -34,30 +33,28 @@ func UserFromContext(ctx context.Context) (models.User, bool) {
 	return u, ok
 }
 
-// Auth authenticates requests with Clerk session tokens or generated API keys
+// Auth authenticates requests with Clerk session tokens
 // and resolves them to application users. Attach it to any route group that
 // must only be reachable by authenticated users:
 //
-//	authMW := middleware.NewAuth(usersRepo, apiKeysRepo)
+//	authMW := middleware.NewAuth(usersRepo)
 //	r.Group(func(r chi.Router) {
 //		r.Use(authMW.RequireUser)
 //		r.Get("/v1/things", handler.List) // handler calls middleware.UserFromContext
 //	})
 type Auth struct {
-	users   *users.Repository
-	apiKeys *apikeys.Repository
+	users *users.Repository
 }
 
 // NewAuth creates the auth middleware with its dependencies. The Clerk SDK
 // must already be configured via auth.Init (clerk.SetKey).
-func NewAuth(usersRepo *users.Repository, apiKeysRepo *apikeys.Repository) *Auth {
-	return &Auth{users: usersRepo, apiKeys: apiKeysRepo}
+func NewAuth(usersRepo *users.Repository) *Auth {
+	return &Auth{users: usersRepo}
 }
 
 // RequireUser verifies the bearer token in the Authorization header. Clerk JWTs
-// are verified against Clerk's JWKS; generated API keys are verified by hash
-// lookup in Postgres. Both auth paths resolve to the application user row and
-// store it in the request context for handlers to read via UserFromContext.
+// are verified against Clerk's JWKS and resolved to the application user row,
+// which is stored in the request context for handlers to read via UserFromContext.
 // Requests without a valid token get a 401 JSON envelope and never reach the
 // wrapped handler.
 //
@@ -79,27 +76,6 @@ func (a *Auth) RequireUser(next http.Handler) http.Handler {
 		token := bearerToken(r)
 		if token == "" {
 			writeUnauthorized(w, r)
-			return
-		}
-
-		if apikeys.LooksLikeKey(token) {
-			user, err := a.resolveAPIKeyUser(r.Context(), token)
-			if err != nil {
-				if errors.Is(err, apikeys.ErrNotFound) {
-					writeUnauthorized(w, r)
-					return
-				}
-				log.Printf("auth: resolving user for api key failed: %v", err)
-				writeAuthJSON(w, http.StatusInternalServerError, "failed to resolve the authenticated user")
-				return
-			}
-			if user.BlockedAt != nil {
-				a.writeBlocked(w, r, user)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), userContextKey{}, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
@@ -128,45 +104,6 @@ func (a *Auth) RequireUser(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})).ServeHTTP(w, r)
 	})
-}
-
-// RequireAPIKeyUser verifies that the Authorization bearer token is one of the
-// application's generated API keys. Clerk session tokens are intentionally not
-// accepted by this middleware; use it for live API routes that should only be
-// callable with developer API keys.
-func (a *Auth) RequireAPIKeyUser(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := bearerToken(r)
-		if token == "" || !apikeys.LooksLikeKey(token) {
-			writeAPIKeyUnauthorized(w, r)
-			return
-		}
-
-		user, err := a.resolveAPIKeyUser(r.Context(), token)
-		if err != nil {
-			if errors.Is(err, apikeys.ErrNotFound) {
-				writeAPIKeyUnauthorized(w, r)
-				return
-			}
-			log.Printf("auth: resolving user for api key failed: %v", err)
-			writeAuthJSON(w, http.StatusInternalServerError, "failed to resolve the authenticated user")
-			return
-		}
-		if user.BlockedAt != nil {
-			a.writeBlocked(w, r, user)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), userContextKey{}, user)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func (a *Auth) resolveAPIKeyUser(ctx context.Context, token string) (models.User, error) {
-	if a.apiKeys == nil {
-		return models.User{}, fmt.Errorf("api key repository is not configured")
-	}
-	return a.apiKeys.Authenticate(ctx, token)
 }
 
 // resolveUser maps a verified Clerk user id to the application user row,
@@ -217,35 +154,13 @@ func primaryEmail(u *clerk.User) string {
 
 func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
 	logRejectedToken(r)
-	writeAuthJSON(w, http.StatusUnauthorized, "Authentication required: send a valid Clerk session token or API key in the Authorization header")
-}
-
-func writeAPIKeyUnauthorized(w http.ResponseWriter, r *http.Request) {
-	logRejectedAPIKey(r)
-	writeAuthJSON(w, http.StatusUnauthorized, "Authentication required: send a valid API key in the Authorization header")
-}
-
-func logRejectedAPIKey(r *http.Request) {
-	token := bearerToken(r)
-	if token == "" {
-		log.Printf("auth: rejected api-key-only request without bearer token path=%s", r.URL.Path)
-		return
-	}
-	if apikeys.LooksLikeKey(token) {
-		log.Printf("auth: rejected api key path=%s key=%s", r.URL.Path, tokenLogHint(token))
-		return
-	}
-	log.Printf("auth: rejected non-api-key bearer token on api-key-only route path=%s", r.URL.Path)
+	writeAuthJSON(w, http.StatusUnauthorized, "Authentication required: send a valid Clerk session token in the Authorization header")
 }
 
 func logRejectedToken(r *http.Request) {
 	token := bearerToken(r)
 	if token == "" {
 		log.Printf("auth: rejected request without bearer token path=%s", r.URL.Path)
-		return
-	}
-	if apikeys.LooksLikeKey(token) {
-		log.Printf("auth: rejected api key path=%s key=%s", r.URL.Path, tokenLogHint(token))
 		return
 	}
 
@@ -282,13 +197,6 @@ func bearerToken(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSpace(token)
-}
-
-func tokenLogHint(token string) string {
-	if len(token) <= 12 {
-		return token
-	}
-	return token[:8] + "..." + token[len(token)-4:]
 }
 
 // writeAuthJSON emits the project's standard error envelope. Mirrors the

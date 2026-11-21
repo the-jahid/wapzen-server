@@ -39,7 +39,7 @@ var UnprocessableErrorExample = types.ErrorEnvelope{
 	Success: false,
 	Message: "Unprocessable entity",
 	Errors: []types.FieldError{
-		{Field: "voice.elevenlabs.voice_id", Message: "voice_id not available for the selected provider"},
+		{Field: "voice.openai.voice_id", Message: "voice_id is not a Realtime voice"},
 	},
 }
 

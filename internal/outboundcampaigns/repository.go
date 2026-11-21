@@ -57,7 +57,7 @@ const campaignColumns = `
 // and an agent need not have been assigned a number yet.
 const campaignJoins = `
 	LEFT JOIN agents a ON a.id = c.agent_id
-	LEFT JOIN phone_numbers p ON p.id = a.phone_number_id
+	LEFT JOIN voice_phone_numbers p ON p.id = a.phone_number_id
 `
 
 type dbQuerier interface {

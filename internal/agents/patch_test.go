@@ -25,10 +25,10 @@ func TestParsePatchScalars(t *testing.T) {
 			wantArgs: nil,
 		},
 		{
-			name:     "documented example: name and temperature",
-			body:     `{"agent":{"name":"Jarvis (Updated)"},"model":{"temperature":0.4}}`,
-			wantCols: []string{"agent_name", "model_temperature"},
-			wantArgs: []any{"Jarvis (Updated)", ptr(0.4)},
+			name:     "documented example: name and voice",
+			body:     `{"agent":{"name":"Jarvis (Updated)"},"voice":{"openai":{"voice_id":"marin"}}}`,
+			wantCols: []string{"agent_name", "voice_openai_voice_id"},
+			wantArgs: []any{"Jarvis (Updated)", "marin"},
 		},
 		{
 			name:     "explicit null clears a nullable column",
@@ -49,18 +49,6 @@ func TestParsePatchScalars(t *testing.T) {
 			wantArgs: []any{(*string)(nil)},
 		},
 		{
-			name:     "nested transcriber provider model",
-			body:     `{"transcriber":{"openai":{"model":"gpt-4o-transcribe"}}}`,
-			wantCols: []string{"transcriber_openai_model"},
-			wantArgs: []any{"gpt-4o-transcribe"},
-		},
-		{
-			name:     "nested elevenlabs realtime transcriber model",
-			body:     `{"transcriber":{"provider":"11labs","elevenlabs":{"model":"scribe_v2_realtime"}}}`,
-			wantCols: []string{"transcriber_provider", "transcriber_elevenlabs_model"},
-			wantArgs: []any{"11labs", "scribe_v2_realtime"},
-		},
-		{
 			name:     "nested openai realtime voice model",
 			body:     `{"voice":{"openai":{"realtime_model":"gpt-realtime-2.1"}}}`,
 			wantCols: []string{"voice_openai_realtime_model"},
@@ -74,7 +62,7 @@ func TestParsePatchScalars(t *testing.T) {
 		},
 		{
 			name:     "null section is a no-op",
-			body:     `{"model":null}`,
+			body:     `{"voice":null}`,
 			wantCols: nil,
 			wantArgs: nil,
 		},
@@ -175,7 +163,7 @@ func TestNormalizeIDs(t *testing.T) {
 func TestParsePatchInvalid(t *testing.T) {
 	bodies := map[string]string{
 		"not an object":      `"just a string"`,
-		"wrong scalar type":  `{"model":{"temperature":"hot"}}`,
+		"wrong scalar type":  `{"voice":{"openai":{"speed":"fast"}}}`,
 		"wrong section type": `{"agent":"nope"}`,
 		"wrong child type":   `{"knowledge_base":{"knowledge_base_ids":"kb_1"}}`,
 	}

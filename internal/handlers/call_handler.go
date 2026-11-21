@@ -18,6 +18,7 @@ import (
 	"whatsapp-ai-caller-server/internal/models"
 	"whatsapp-ai-caller-server/internal/phonenumbers"
 	"whatsapp-ai-caller-server/internal/swagger/modules/agents/types"
+	"whatsapp-ai-caller-server/internal/voicecall"
 	"whatsapp-ai-caller-server/internal/whatsapplogin"
 )
 
@@ -106,7 +107,7 @@ type createCallRequest struct {
 //
 // Create godoc
 // @Summary      Create Call
-// @Description  Places an outbound WhatsApp call from a connected phone number owned by the authenticated API key owner. The agent that speaks is the one assigned to that phone number; agent_id is optional and only asserts which agent that is. Returns as soon as the callee's phone is ringing — the returned call starts in the "received" status and reaches "answered" when the callee picks up, or "declined" if they cut it while it rings.
+// @Description  Places an outbound WhatsApp call from a connected phone number owned by the authenticated user. The agent that speaks is the one assigned to that phone number; agent_id is optional and only asserts which agent that is. Returns as soon as the callee's phone is ringing — the returned call starts in the "received" status and reaches "answered" when the callee picks up, or "declined" if they cut it while it rings.
 // @Tags         Calls
 // @Accept       json
 // @Produce      json
@@ -275,8 +276,7 @@ func placeCallErrorResponse(err error) (int, string) {
 		errors.Is(err, whatsapplogin.ErrCallHandlerUnavailable),
 		errors.Is(err, whatsapplogin.ErrNoLiveAgent):
 		return http.StatusConflict, err.Error()
-	case errors.Is(err, whatsapplogin.ErrCallingUnavailable),
-		errors.Is(err, whatsapplogin.ErrAgentUnavailable):
+	case errors.Is(err, whatsapplogin.ErrCallingUnavailable):
 		return http.StatusServiceUnavailable, err.Error()
 	default:
 		return http.StatusBadGateway, "could not place the call: " + err.Error()
@@ -287,7 +287,7 @@ func placeCallErrorResponse(err error) (int, string) {
 //
 // List godoc
 // @Summary      List Calls
-// @Description  Returns a paginated list of the calls handled for the authenticated API key owner, newest first.
+// @Description  Returns a paginated list of the calls handled for the authenticated user, newest first.
 // @Tags         Calls
 // @Produce      json
 // @Security     BearerAuth
@@ -582,6 +582,65 @@ func (h *CallHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, callEnvelope{
 		Success: true,
 		Message: "Call updated successfully",
+		Data:    call,
+		Links:   callLinks{Self: "/v1/calls/" + call.ID},
+	})
+}
+
+// dashboardHangupReason is the end reason recorded on a call hung up from the
+// dashboard.
+const dashboardHangupReason = "hung up from dashboard"
+
+// Hangup ends one of the authenticated user's calls that is still ringing or
+// connected, and returns the call as stored afterwards. The final status is
+// written by the call's own lifecycle a moment later (declined while ringing,
+// ended once answered), so callers keep following it with Get. A call that is
+// already over comes back unchanged. A row still marked in progress that no
+// longer has a live call behind it (the server restarted mid-call) is closed
+// out as ended, so it cannot stay "ringing" forever.
+func (h *CallHandler) Hangup(w http.ResponseWriter, r *http.Request) {
+	user, ok := currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	callID, ok := callIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	call, err := h.repo.GetByUser(r.Context(), user.ID, callID)
+	if err != nil {
+		if errors.Is(err, calls.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "call not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "failed to load call"})
+		return
+	}
+
+	if call.Status == models.CallStatusReceived || call.Status == models.CallStatusAnswered {
+		err := h.loginManager.HangupCall(call.ID, dashboardHangupReason)
+		switch {
+		case err == nil:
+		case errors.Is(err, voicecall.ErrCallNotLive):
+			status, reason := models.CallStatusEnded, dashboardHangupReason
+			if _, err := h.repo.UpdateByUser(r.Context(), user.ID, call.ID, &status, &reason); err != nil {
+				writeJSON(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "failed to end call"})
+				return
+			}
+		default:
+			writeJSON(w, http.StatusBadGateway, models.APIResponse{Success: false, Message: "could not hang up the call: " + err.Error()})
+			return
+		}
+		if fresh, err := h.repo.GetByUser(r.Context(), user.ID, call.ID); err == nil {
+			call = fresh
+		}
+	}
+
+	writeJSON(w, http.StatusOK, callEnvelope{
+		Success: true,
+		Message: "Call hung up",
 		Data:    call,
 		Links:   callLinks{Self: "/v1/calls/" + call.ID},
 	})

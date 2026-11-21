@@ -13,15 +13,11 @@ import (
 // is the column order agentRow and scanAgentRow follow.
 const returningColumns = `
 	id, created_at, updated_at,
-	agent_name, language, timezone, phone_number_id, call_direction, status,
-	model_provider, model_name, model_temperature,
+	agent_name, language, timezone, phone_number_id, status,
 	prompt_begin_message_mode, prompt_begin_message, prompt_begin_message_delay_ms,
 	prompt_system_prompt,
-	voice_provider,
-	voice_elevenlabs_voice_id, voice_elevenlabs_voice_name, voice_elevenlabs_voice_model,
-	voice_openai_voice_id, voice_openai_voice_name, voice_openai_voice_model, voice_openai_realtime_model, voice_openai_instructions,
+	voice_openai_voice_id, voice_openai_voice_name, voice_openai_realtime_model,
 	voice_openai_speed, voice_openai_volume,
-	transcriber_provider, transcriber_language, transcriber_openai_model, transcriber_elevenlabs_model,
 	post_call_analysis_provider, post_call_analysis_model
 `
 
@@ -36,34 +32,18 @@ type agentRow struct {
 	Language      string
 	Timezone      *string
 	PhoneNumberID *string
-	CallDirection string
 	Status        string
-
-	ModelProvider    string
-	ModelName        string
-	ModelTemperature *float64
 
 	PromptBeginMessageMode    string
 	PromptBeginMessage        *string
 	PromptBeginMessageDelayMs *int
 	PromptSystemPrompt        *string
 
-	VoiceProvider             *string
-	VoiceElevenlabsVoiceID    string
-	VoiceElevenlabsVoiceName  string
-	VoiceElevenlabsVoiceModel string
-	VoiceOpenAIVoiceID        string
-	VoiceOpenAIVoiceName      string
-	VoiceOpenAIVoiceModel     string
-	VoiceOpenAIRealtimeModel  string
-	VoiceOpenAIInstructions   *string
-	VoiceOpenAISpeed          float64
-	VoiceOpenAIVolume         float64
-
-	TranscriberProvider        string
-	TranscriberLanguage        string
-	TranscriberOpenAIModel     string
-	TranscriberElevenlabsModel string
+	VoiceOpenAIVoiceID       string
+	VoiceOpenAIVoiceName     string
+	VoiceOpenAIRealtimeModel string
+	VoiceOpenAISpeed         float64
+	VoiceOpenAIVolume        float64
 
 	PostCallAnalysisProvider string
 	PostCallAnalysisModel    *string
@@ -76,15 +56,11 @@ type rowScanner interface {
 func scanAgentRow(row rowScanner, dst *agentRow) error {
 	return row.Scan(
 		&dst.ID, &dst.CreatedAt, &dst.UpdatedAt,
-		&dst.AgentName, &dst.Language, &dst.Timezone, &dst.PhoneNumberID, &dst.CallDirection, &dst.Status,
-		&dst.ModelProvider, &dst.ModelName, &dst.ModelTemperature,
+		&dst.AgentName, &dst.Language, &dst.Timezone, &dst.PhoneNumberID, &dst.Status,
 		&dst.PromptBeginMessageMode, &dst.PromptBeginMessage, &dst.PromptBeginMessageDelayMs,
 		&dst.PromptSystemPrompt,
-		&dst.VoiceProvider,
-		&dst.VoiceElevenlabsVoiceID, &dst.VoiceElevenlabsVoiceName, &dst.VoiceElevenlabsVoiceModel,
-		&dst.VoiceOpenAIVoiceID, &dst.VoiceOpenAIVoiceName, &dst.VoiceOpenAIVoiceModel, &dst.VoiceOpenAIRealtimeModel, &dst.VoiceOpenAIInstructions,
+		&dst.VoiceOpenAIVoiceID, &dst.VoiceOpenAIVoiceName, &dst.VoiceOpenAIRealtimeModel,
 		&dst.VoiceOpenAISpeed, &dst.VoiceOpenAIVolume,
-		&dst.TranscriberProvider, &dst.TranscriberLanguage, &dst.TranscriberOpenAIModel, &dst.TranscriberElevenlabsModel,
 		&dst.PostCallAnalysisProvider, &dst.PostCallAnalysisModel,
 	)
 }
@@ -112,13 +88,7 @@ func buildResource(row agentRow, knowledgeBaseIDs, toolIDs []string) types.Agent
 				Language:      row.Language,
 				Timezone:      row.Timezone,
 				PhoneNumberID: row.PhoneNumberID,
-				CallDirection: row.CallDirection,
 				Status:        row.Status,
-			},
-			Model: &types.ModelSection{
-				Provider:    row.ModelProvider,
-				Name:        row.ModelName,
-				Temperature: deref(row.ModelTemperature),
 			},
 			Prompt: &types.PromptSection{
 				BeginMessageMode:    row.PromptBeginMessageMode,
@@ -127,27 +97,13 @@ func buildResource(row agentRow, knowledgeBaseIDs, toolIDs []string) types.Agent
 				SystemPrompt:        deref(row.PromptSystemPrompt),
 			},
 			Voice: &types.VoiceSection{
-				Provider: deref(row.VoiceProvider),
-				ElevenLabs: &types.ElevenLabsVoice{
-					VoiceID:    row.VoiceElevenlabsVoiceID,
-					VoiceName:  row.VoiceElevenlabsVoiceName,
-					VoiceModel: row.VoiceElevenlabsVoiceModel,
-				},
 				OpenAI: &types.OpenAIVoice{
 					VoiceID:       row.VoiceOpenAIVoiceID,
 					VoiceName:     row.VoiceOpenAIVoiceName,
-					VoiceModel:    row.VoiceOpenAIVoiceModel,
 					RealtimeModel: row.VoiceOpenAIRealtimeModel,
-					Instructions:  row.VoiceOpenAIInstructions,
 					Speed:         row.VoiceOpenAISpeed,
 					Volume:        row.VoiceOpenAIVolume,
 				},
-			},
-			Transcriber: &types.TranscriberSection{
-				Provider:   row.TranscriberProvider,
-				Language:   row.TranscriberLanguage,
-				OpenAI:     &types.TranscriberOpenAI{Model: row.TranscriberOpenAIModel},
-				ElevenLabs: &types.TranscriberElevenLabs{Model: row.TranscriberElevenlabsModel},
 			},
 			PostCall: &types.PostCallSection{
 				AnalysisProvider: row.PostCallAnalysisProvider,

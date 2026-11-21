@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"log"
 	"strings"
 
 	"whatsapp-ai-caller-server/internal/models"
@@ -118,18 +117,15 @@ func (s *Service) Delete(ctx context.Context, userID, agentID string) error {
 	// removed afterward (deleting the agent leaves the number unassigned).
 	assignedPhone, _, _ := s.repo.LookupPhoneNumberForAgent(ctx, userID, agentID)
 
-	// And the namespaces of the knowledge bases the delete is about to cascade
-	// to, which are unreachable once their rows are gone. Nothing is purged
-	// unless the delete below succeeds, so a failed or unauthorized delete
-	// touches no vectors.
-	doomedBases, _ := s.repo.KnowledgeBasesForAgent(ctx, agentID)
-
+	// The agent's knowledge bases are kept, and so are their vectors: the
+	// database is shared with whiskey-bailey-server, where the same bases can
+	// be attached to chat agents, so knowledge_bases.agent_id is ON DELETE SET
+	// NULL and the bases simply become unattached.
 	if err := s.repo.Delete(ctx, userID, agentID); err != nil {
 		return err
 	}
 
 	s.refreshInbound(assignedPhone)
-	s.purgeNamespaces(ctx, doomedBases)
 	return nil
 }
 
@@ -154,25 +150,3 @@ func (s *Service) refreshInbound(phoneNumberIDs ...*string) {
 	}
 }
 
-// purgeNamespaces deletes the vectors of knowledge bases an agent delete has
-// just removed.
-//
-// Best effort, like the knowledge-base delete endpoint's own purge: the rows are
-// already gone, so a namespace that could not be dropped is logged rather than
-// turned into a failed delete. It leaves vectors nothing can reach, not a
-// half-deleted agent.
-func (s *Service) purgeNamespaces(ctx context.Context, bases []models.AgentKnowledgeBase) {
-	if s.indexer == nil || !s.indexer.Enabled() {
-		return
-	}
-	for _, base := range bases {
-		namespace := base.Namespace
-		if namespace == "" {
-			continue
-		}
-		kb := models.KnowledgeBase{ID: base.ID, NamespaceID: &namespace}
-		if err := s.indexer.PurgeNamespace(ctx, kb); err != nil {
-			log.Printf("agent delete: purging vector namespace for knowledge base %s failed: %v", base.ID, err)
-		}
-	}
-}

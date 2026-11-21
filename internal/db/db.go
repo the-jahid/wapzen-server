@@ -2,8 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
-	"embed"
 	"fmt"
 	"net/url"
 	"strings"
@@ -11,12 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib" // also registers the "pgx" database/sql driver
-	"github.com/pressly/goose/v3"
 )
-
-//go:embed migrations/*.sql
-var migrationsFS embed.FS
 
 // The Supabase session pooler gives every client together only pool_size (15)
 // connections, and one more is refused outright ("max clients reached"). That
@@ -27,8 +20,7 @@ var migrationsFS embed.FS
 // pool_max_conns / pool_min_conns in DATABASE_URL win over both.
 //
 // One instance takes at most maxConns + WhatsAppStoreMaxConns (7), so the
-// outgoing and incoming instances of a deploy fit in 15 together; migrations
-// borrow this pool rather than adding a connection of their own.
+// outgoing and incoming instances of a deploy fit in 15 together.
 //
 // minConns is how many connections the pool keeps open while idle. A new
 // connection to the hosted database costs several round trips (TCP, TLS, auth)
@@ -158,41 +150,4 @@ func normalizeDatabaseURL(databaseURL string) string {
 	}
 
 	return parsed.String()
-}
-
-// Migrate applies all pending database migrations embedded in migrations/*.sql.
-//
-// goose works over the database/sql interface rather than pgxpool, so we open a
-// short-lived *sql.DB using the pgx stdlib driver, run the migrations, then
-// close it. Already-applied migrations are tracked in the goose_db_version
-// table, so this is safe to call on every startup.
-func Migrate(databaseURL string) error {
-	sqlDB, err := sql.Open("pgx", normalizeDatabaseURL(databaseURL))
-	if err != nil {
-		return fmt.Errorf("open sql db for migrations: %w", err)
-	}
-	defer sqlDB.Close()
-	sqlDB.SetMaxOpenConns(1)
-
-	return RetryWhilePoolerFull(context.Background(), func() error { return migrate(sqlDB) })
-}
-
-// MigratePool is Migrate over a pool that is already connected, borrowing one
-// of its connections instead of opening another. Closing the database/sql
-// handle it wraps the pool in leaves the pool open.
-func MigratePool(pool *pgxpool.Pool) error {
-	sqlDB := stdlib.OpenDBFromPool(pool)
-	defer sqlDB.Close()
-	return migrate(sqlDB)
-}
-
-func migrate(sqlDB *sql.DB) error {
-	goose.SetBaseFS(migrationsFS)
-	if err := goose.SetDialect("postgres"); err != nil {
-		return fmt.Errorf("set goose dialect: %w", err)
-	}
-	if err := goose.Up(sqlDB, "migrations"); err != nil {
-		return fmt.Errorf("run migrations: %w", err)
-	}
-	return nil
 }

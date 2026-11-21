@@ -135,6 +135,15 @@ type AgentKnowledgeBase struct {
 	Namespace string
 }
 
+// KnowledgeDocument is one source of an agent's knowledge base read back in
+// full, for a call that puts a small knowledge base straight into its
+// instructions instead of searching it.
+type KnowledgeDocument struct {
+	KnowledgeBase string
+	Title         string
+	Content       string
+}
+
 // KnowledgeSnippet is one passage retrieved from a knowledge base: the chunk
 // text as it was indexed, the source title it came from, and how closely it
 // matched the query (higher is closer).

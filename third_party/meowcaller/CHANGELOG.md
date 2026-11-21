@@ -7,6 +7,19 @@ All notable changes to meowcaller, tracked per module. Format loosely follows
 
 ## [Unreleased]
 
+### meowcaller — report only the relay media binds to
+- `reportRelayLatency` now sends a single `<relaylatency>` for the endpoint
+  `getMediaRelayEndpoint` binds to, instead of one per candidate relay.
+- Reporting every candidate included the FNA relay (`is_fna=1`, `auth_token_id=0`),
+  which usually has the lowest `c2r_rtt`. The callee agreed it was fastest and
+  streamed there, while media had bound to the first non-FNA relay. Live call
+  2026-11-21: we reported fdac184c01 7 ms / ccu2c02 14 ms / del3c02 36 ms, callee
+  reported 5 / 11 / 33 ms, we bound ccu2c02: accept arrived, no `first_rtp_in`.
+- `implemented`. Unit tests updated: one stanza for the bound relay, FNA never
+  reported, once-per-call, inbound silence, armed across an endpoint-less
+  allocation. `// ASSUMPTION:` that the callee elects among relays both sides
+  reported; only a live outbound call confirms it.
+
 ### meowcaller — report the caller's relay latencies so outbound calls bridge
 - An outbound call now sends its half of the relay election: one `<relaylatency>`
   per candidate relay, carrying the server's `c2r_rtt` for our own allocation and

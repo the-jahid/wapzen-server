@@ -38,13 +38,12 @@ func TestServiceCreateRequiresName(t *testing.T) {
 func TestInsertColumnsWritesOnlySuppliedFields(t *testing.T) {
 	req := types.CreateAgentRequest{
 		Agent: &types.AgentSection{Name: "Jarvis", PhoneNumberID: ptr(" phone_1 "), Status: "inactive"},
-		Model: &types.ModelSection{Name: "gpt-4.1-mini"},
 		Voice: &types.VoiceSection{OpenAI: &types.OpenAIVoice{Speed: 1.2}},
 	}
 	got := insertColumns("user_1", req)
 
-	wantCols := []string{"user_id", "agent_name", "phone_number_id", "status", "model_name", "voice_openai_speed"}
-	wantArgs := []any{"user_1", "Jarvis", ptr("phone_1"), "inactive", "gpt-4.1-mini", 1.2}
+	wantCols := []string{"user_id", "agent_name", "phone_number_id", "status", "voice_openai_speed"}
+	wantArgs := []any{"user_1", "Jarvis", ptr("phone_1"), "inactive", 1.2}
 	if !reflect.DeepEqual(got.cols, wantCols) {
 		t.Errorf("cols = %#v, want %#v", got.cols, wantCols)
 	}

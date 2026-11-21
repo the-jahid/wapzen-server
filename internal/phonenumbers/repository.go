@@ -47,7 +47,7 @@ const returningColumns = `
 // been polling valid.
 func (r *Repository) CreatePaired(ctx context.Context, id, userID string, phoneNumber, label *string, waJID string) (models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
-		INSERT INTO phone_numbers (id, user_id, phone_number, label, wa_jid, status, last_connected_at)
+		INSERT INTO voice_phone_numbers (id, user_id, phone_number, label, wa_jid, status, last_connected_at)
 		VALUES ($1, $2, $3, $4, $5, $6, now())
 		RETURNING %s
 	`, returningColumns)
@@ -72,7 +72,7 @@ func (r *Repository) CreatePaired(ctx context.Context, id, userID string, phoneN
 func (r *Repository) ListByUser(ctx context.Context, userID string) ([]models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM phone_numbers
+		FROM voice_phone_numbers
 		WHERE user_id = $1
 		ORDER BY created_at DESC, id DESC
 	`, returningColumns)
@@ -102,7 +102,7 @@ func (r *Repository) ListByUser(ctx context.Context, userID string) ([]models.Ph
 func (r *Repository) ListConnected(ctx context.Context) ([]models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM phone_numbers
+		FROM voice_phone_numbers
 		WHERE status = $1
 		ORDER BY created_at DESC, id DESC
 	`, returningColumns)
@@ -131,7 +131,7 @@ func (r *Repository) ListConnected(ctx context.Context) ([]models.PhoneNumber, e
 // across all users and statuses: the set of linked devices the application
 // still accounts for.
 func (r *Repository) ListWAJIDs(ctx context.Context) ([]string, error) {
-	rows, err := r.db.Query(ctx, `SELECT wa_jid FROM phone_numbers WHERE wa_jid IS NOT NULL AND wa_jid <> ''`)
+	rows, err := r.db.Query(ctx, `SELECT wa_jid FROM voice_phone_numbers WHERE wa_jid IS NOT NULL AND wa_jid <> ''`)
 	if err != nil {
 		return nil, fmt.Errorf("list phone number WhatsApp JIDs: %w", err)
 	}
@@ -155,12 +155,16 @@ func (r *Repository) ListWAJIDs(ctx context.Context) ([]string, error) {
 // credentials worth reconnecting on startup: both currently-connected rows and
 // rows that lost their live socket (disconnected). A blocked account's numbers
 // are left offline.
+//
+// Every row of voice_phone_numbers is this server's own (whatsmeow-paired);
+// chat's Baileys numbers live in whiskey's phone_numbers table, which this
+// server never reads.
 func (r *Repository) ListResumable(ctx context.Context) ([]models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM phone_numbers
+		FROM voice_phone_numbers
 		WHERE status = ANY($1)
-			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = phone_numbers.user_id AND u.blocked_at IS NOT NULL)
+			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = voice_phone_numbers.user_id AND u.blocked_at IS NOT NULL)
 		ORDER BY created_at DESC, id DESC
 	`, returningColumns)
 
@@ -192,7 +196,7 @@ func (r *Repository) ListResumable(ctx context.Context) ([]models.PhoneNumber, e
 func (r *Repository) GetByUser(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM phone_numbers
+		FROM voice_phone_numbers
 		WHERE id = $1 AND user_id = $2
 	`, returningColumns)
 
@@ -211,7 +215,7 @@ func (r *Repository) GetByUser(ctx context.Context, userID, phoneNumberID string
 func (r *Repository) GetByUserPhone(ctx context.Context, userID, phoneNumber string) (models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM phone_numbers
+		FROM voice_phone_numbers
 		WHERE user_id = $1 AND phone_number = $2
 	`, returningColumns)
 
@@ -228,7 +232,7 @@ func (r *Repository) GetByUserPhone(ctx context.Context, userID, phoneNumber str
 // SetQRCode stores the latest renderable QR data URL for a pending login.
 func (r *Repository) SetQRCode(ctx context.Context, userID, phoneNumberID, qrCode string) (models.PhoneNumber, error) {
 	const query = `
-		UPDATE phone_numbers
+		UPDATE voice_phone_numbers
 		SET qr_code = $3, status = $4, updated_at = now()
 		WHERE id = $1 AND user_id = $2
 		RETURNING id, user_id, phone_number, label, wa_jid, status, qr_code,
@@ -242,7 +246,7 @@ func (r *Repository) SetQRCode(ctx context.Context, userID, phoneNumberID, qrCod
 // connected.
 func (r *Repository) MarkConnected(ctx context.Context, userID, phoneNumberID, waJID string, phoneNumber *string) (models.PhoneNumber, error) {
 	const query = `
-		UPDATE phone_numbers
+		UPDATE voice_phone_numbers
 		SET wa_jid = $3,
 			phone_number = COALESCE($4, phone_number),
 			status = $5,
@@ -267,7 +271,7 @@ func (r *Repository) ResetPendingLogin(ctx context.Context, userID, phoneNumberI
 // row and any agent assignment that references it.
 func (r *Repository) ResetForRePair(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {
 	const query = `
-		UPDATE phone_numbers
+		UPDATE voice_phone_numbers
 		SET wa_jid = NULL,
 			status = $3,
 			qr_code = NULL,
@@ -300,7 +304,7 @@ func (r *Repository) MarkDisconnected(ctx context.Context, userID, phoneNumberID
 // means the row was left alone.
 func (r *Repository) MarkDisconnectedIfLatest(ctx context.Context, userID, phoneNumberID, waJID string, connectedAt time.Time) (models.PhoneNumber, error) {
 	const query = `
-		UPDATE phone_numbers
+		UPDATE voice_phone_numbers
 		SET status = $5, qr_code = NULL, updated_at = now()
 		WHERE id = $1 AND user_id = $2 AND wa_jid = $3
 			AND status = $6
@@ -317,7 +321,7 @@ func (r *Repository) MarkDisconnectedIfLatest(ctx context.Context, userID, phone
 // authenticated user.
 func (r *Repository) DeleteByUser(ctx context.Context, userID, phoneNumberID string) (models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
-		DELETE FROM phone_numbers
+		DELETE FROM voice_phone_numbers
 		WHERE id = $1 AND user_id = $2
 		RETURNING %s
 	`, returningColumns)
@@ -339,7 +343,7 @@ func (r *Repository) DeleteByUser(ctx context.Context, userID, phoneNumberID str
 // is gone or names another device.
 func (r *Repository) DeleteByUserDevice(ctx context.Context, userID, phoneNumberID, waJID string) (models.PhoneNumber, error) {
 	query := fmt.Sprintf(`
-		DELETE FROM phone_numbers
+		DELETE FROM voice_phone_numbers
 		WHERE id = $1 AND user_id = $2 AND wa_jid = $3
 		RETURNING %s
 	`, returningColumns)
@@ -356,7 +360,7 @@ func (r *Repository) DeleteByUserDevice(ctx context.Context, userID, phoneNumber
 
 func (r *Repository) markStatus(ctx context.Context, userID, phoneNumberID, status string) (models.PhoneNumber, error) {
 	const query = `
-		UPDATE phone_numbers
+		UPDATE voice_phone_numbers
 		SET status = $3, qr_code = NULL, updated_at = now()
 		WHERE id = $1 AND user_id = $2
 		RETURNING id, user_id, phone_number, label, wa_jid, status, qr_code,

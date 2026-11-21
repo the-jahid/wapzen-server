@@ -56,11 +56,10 @@ func phoneNumberIDParam() oas.Object {
 	}
 }
 
-// apiKeySecurity marks phone-number operations as authenticated by generated
-// API keys in Swagger UI. The route middleware also accepts Clerk sessions for
-// dashboard compatibility, but public docs should guide callers to API keys.
-func apiKeySecurity() []any {
-	return []any{oas.Object{"apiKeyBearer": []any{}}}
+// bearerSecurity marks phone-number operations as authenticated by a Clerk
+// session bearer token.
+func bearerSecurity() []any {
+	return []any{oas.Object{"bearer": []any{}}}
 }
 
 func loginPhoneNumberOperation() oas.Object {
@@ -69,12 +68,12 @@ func loginPhoneNumberOperation() oas.Object {
 		"operationId": "loginPhoneNumber",
 		"summary":     "Start WhatsApp QR login",
 		"description": "Starts a WhatsApp Linked Devices QR login. With phone_number_id and force_repair, it replaces a connected companion while preserving the phone-number resource and agent assignment. With agent_id, the number the scan links is assigned to that agent as soon as it connects.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"requestBody": optionalRequestBody("Optional phone number metadata for the login.", "LoginPhoneNumberRequest", loginPhoneNumberRequestExample()),
 		"responses": oas.Object{
 			"200": okJSON("The pending phone number login resource.", "LoginPhoneNumberResponse", phoneNumberResponseExample("Phone number login started successfully")),
 			"400": errJSON("Bad Request"),
-			"401": errJSON("Unauthorized - missing or invalid API key bearer token."),
+			"401": errJSON("Unauthorized - missing or invalid bearer token."),
 			"409": errJSON("Conflict - phone number already exists."),
 			"500": errJSON("Internal Server Error"),
 		},
@@ -86,13 +85,13 @@ func logoutPhoneNumberOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "logoutPhoneNumber",
 		"summary":     "Logout",
-		"description": "Disconnects a WhatsApp phone number for the authenticated API key owner and deletes its local database record.",
-		"security":    apiKeySecurity(),
+		"description": "Disconnects a WhatsApp phone number for the authenticated user and deletes its local database record.",
+		"security":    bearerSecurity(),
 		"requestBody": requestBody("The phone number to log out.", "LogoutPhoneNumberRequest", logoutPhoneNumberRequestExample()),
 		"responses": oas.Object{
 			"200": okJSON("The phone number was disconnected and deleted.", "LogoutPhoneNumberResponse", logoutPhoneNumberResponseExample()),
 			"400": errJSON("Bad Request"),
-			"401": errJSON("Unauthorized - missing or invalid API key bearer token."),
+			"401": errJSON("Unauthorized - missing or invalid bearer token."),
 			"404": errJSON("Not Found"),
 			"500": errJSON("Internal Server Error"),
 		},
@@ -104,11 +103,11 @@ func listPhoneNumbersOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listPhoneNumbers",
 		"summary":     "Get phone numbers list",
-		"description": "Returns the phone numbers owned by the authenticated API key owner.",
-		"security":    apiKeySecurity(),
+		"description": "Returns the phone numbers owned by the authenticated user.",
+		"security":    bearerSecurity(),
 		"responses": oas.Object{
 			"200": okJSON("The phone number list.", "ListPhoneNumbersResponse", listPhoneNumbersResponseExample()),
-			"401": errJSON("Unauthorized - missing or invalid API key bearer token."),
+			"401": errJSON("Unauthorized - missing or invalid bearer token."),
 			"500": errJSON("Internal Server Error"),
 		},
 	}
@@ -119,13 +118,13 @@ func getPhoneNumberOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "getPhoneNumber",
 		"summary":     "Get one phone number",
-		"description": "Returns a single phone number by id, scoped to the authenticated API key owner.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a single phone number by id, scoped to the authenticated user.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{phoneNumberIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The requested phone number resource.", "GetPhoneNumberResponse", phoneNumberResponseExample("Phone number retrieved successfully")),
 			"400": errJSON("Invalid phone_number_id path parameter."),
-			"401": errJSON("Unauthorized - missing or invalid API key bearer token."),
+			"401": errJSON("Unauthorized - missing or invalid bearer token."),
 			"404": errJSON("Not Found"),
 			"500": errJSON("Internal Server Error"),
 		},
@@ -133,10 +132,10 @@ func getPhoneNumberOperation() oas.Object {
 }
 
 func phoneNumberPaths() oas.Object {
-	collection := oas.APIV1Prefix + "/phone-number"
+	collection := oas.APIV1Prefix + "/voice/phone-number"
 	login := collection + "/login"
 	logout := collection + "/logout"
-	item := oas.APIV1Prefix + "/phone-number/{phone_number_id}"
+	item := oas.APIV1Prefix + "/voice/phone-number/{phone_number_id}"
 	return oas.Object{
 		collection: oas.Object{
 			"get": listPhoneNumbersOperation(),

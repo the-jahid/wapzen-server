@@ -139,6 +139,19 @@ func (c *liveCallControls) release(trigger string) {
 	}
 }
 
+// releaseReason is why this side hung up, or "" when it has not.
+func (c *liveCallControls) releaseReason() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.armed {
+		return ""
+	}
+	return c.reason
+}
+
 // stop abandons a pending release. It is called when the call ends on its own,
 // so a timer armed moments earlier cannot fire against a call that is gone.
 func (c *liveCallControls) stop() {
@@ -274,11 +287,12 @@ func (t *customToolbox) Instructions() string {
 		b.WriteString(": ")
 		b.WriteString(strings.TrimSpace(tool.Description))
 	}
-	b.WriteString("\nCall a tool as soon as the conversation calls for it, rather than describing what you are about to do. ")
+	b.WriteString("\nBefore an action that does something for the caller (booking, ordering, sending), confirm the key details with them first. ")
+	b.WriteString("Then call the tool as soon as the conversation calls for it, rather than describing what you are about to do. ")
 	b.WriteString("Never read out a tool name, a URL, or raw data you get back — say only the part that answers the caller, in your own words. ")
 	b.WriteString("If a tool reports a failure, tell the caller you could not complete that right now instead of inventing a result.")
 	if t.hasHangupTool() {
-		b.WriteString(" When you end the call, say a short goodbye in the same turn — the line stays open just long enough for it.")
+		b.WriteString(" To end or hand over the call, call the tool first without saying goodbye; you will be asked to say your short closing line right after it, and the line stays open just long enough for it.")
 	}
 	return b.String()
 }

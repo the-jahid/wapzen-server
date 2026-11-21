@@ -81,13 +81,7 @@ func parsePatch(body []byte) (agentPatch, error) {
 	if v, ok := field[*string](p, agent, "phone_number_id"); ok {
 		p.patch.columns.add("phone_number_id", normalizePhoneNumberID(v))
 	}
-	set[string](p, agent, "call_direction", "call_direction")
 	set[string](p, agent, "status", "status")
-
-	model := p.section(top, "model")
-	set[string](p, model, "provider", "model_provider")
-	set[string](p, model, "name", "model_name")
-	set[*float64](p, model, "temperature", "model_temperature")
 
 	prompt := p.section(top, "prompt")
 	set[string](p, prompt, "begin_message_mode", "prompt_begin_message_mode")
@@ -96,25 +90,12 @@ func parsePatch(body []byte) (agentPatch, error) {
 	set[*string](p, prompt, "system_prompt", "prompt_system_prompt")
 
 	voice := p.section(top, "voice")
-	set[*string](p, voice, "provider", "voice_provider")
-	elevenLabs := p.section(voice, "elevenlabs")
-	set[string](p, elevenLabs, "voice_id", "voice_elevenlabs_voice_id")
-	set[string](p, elevenLabs, "voice_name", "voice_elevenlabs_voice_name")
-	set[string](p, elevenLabs, "voice_model", "voice_elevenlabs_voice_model")
 	openAI := p.section(voice, "openai")
 	set[string](p, openAI, "voice_id", "voice_openai_voice_id")
 	set[string](p, openAI, "voice_name", "voice_openai_voice_name")
-	set[string](p, openAI, "voice_model", "voice_openai_voice_model")
 	set[string](p, openAI, "realtime_model", "voice_openai_realtime_model")
-	set[*string](p, openAI, "instructions", "voice_openai_instructions")
 	set[float64](p, openAI, "speed", "voice_openai_speed")
 	set[float64](p, openAI, "volume", "voice_openai_volume")
-
-	transcriber := p.section(top, "transcriber")
-	set[string](p, transcriber, "provider", "transcriber_provider")
-	set[string](p, transcriber, "language", "transcriber_language")
-	set[string](p, p.section(transcriber, "openai"), "model", "transcriber_openai_model")
-	set[string](p, p.section(transcriber, "elevenlabs"), "model", "transcriber_elevenlabs_model")
 
 	postCall := p.section(top, "post_call")
 	set[string](p, postCall, "analysis_provider", "post_call_analysis_provider")

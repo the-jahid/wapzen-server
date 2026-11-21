@@ -2,8 +2,8 @@ package tools
 
 import "whatsapp-ai-caller-server/internal/swagger/oas"
 
-func apiKeySecurity() []any {
-	return []any{oas.Object{"apiKeyBearer": []any{}}}
+func bearerSecurity() []any {
+	return []any{oas.Object{"bearer": []any{}}}
 }
 
 func toolIDParam() oas.Object {
@@ -32,7 +32,7 @@ func errJSON(desc string, example any) oas.Object {
 }
 
 func resp401() oas.Object {
-	return errJSON("Unauthorized - missing or invalid API key bearer token.", unauthorizedErrorExample())
+	return errJSON("Unauthorized - missing or invalid bearer token.", unauthorizedErrorExample())
 }
 
 func resp404() oas.Object {
@@ -107,8 +107,8 @@ func listToolsOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listTools",
 		"summary":     "List Tools",
-		"description": "Returns a paginated list of the tools owned by the authenticated API key owner, newest first.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a paginated list of the tools owned by the authenticated user, newest first.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{pageParam(), limitParam(), typeParam()},
 		"responses": oas.Object{
 			"200": okJSON("A page of tools.", "ToolListResponse", toolListResponseExample()),
@@ -128,7 +128,7 @@ func createToolOperation() oas.Object {
 			"until it is attached to an agent: creating it only defines the action, it does not offer it on any " +
 			"call. name and description are what the model reads when deciding whether to call it, so they carry " +
 			"the same weight as prompt text.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"requestBody": requestBody("The tool to create.", "CreateToolRequest", createToolRequestExample()),
 		"responses": oas.Object{
 			"201": okJSON("The created tool.", "CreateToolResponse", createToolResponseExample()),
@@ -148,7 +148,7 @@ func getToolOperation() oas.Object {
 		"operationId": "getTool",
 		"summary":     "Get Tool",
 		"description": "Returns a single tool owned by the authenticated user, including its configuration block.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{toolIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The tool.", "ToolResponse", toolResponseExample()),
@@ -167,7 +167,7 @@ func updateToolOperation() oas.Object {
 		"description": "Applies a partial update to a tool; at least one field must be supplied. A configuration " +
 			"block replaces the stored one wholesale. type is fixed at creation. Changes take effect on the next " +
 			"call: a call already in progress keeps the tool definitions it started with.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{toolIDParam()},
 		"requestBody": requestBody("The tool fields to change.", "UpdateToolRequest", updateToolRequestExample()),
 		"responses": oas.Object{
@@ -188,9 +188,9 @@ func deleteToolOperation() oas.Object {
 		"operationId": "deleteTool",
 		"summary":     "Delete Tool",
 		"description": "Deletes a tool owned by the authenticated user. A tool can be attached to several agents, and " +
-			"every one of them simply loses it. Calls and chats already in progress keep the tool for the " +
-			"rest of that conversation.",
-		"security":   apiKeySecurity(),
+			"every one of them simply loses it. Calls already in progress keep the tool for the " +
+			"rest of that call.",
+		"security":   bearerSecurity(),
 		"parameters": []any{toolIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The tool was deleted.", "ToolDeleteResponse", deleteToolResponseExample()),
@@ -202,8 +202,8 @@ func deleteToolOperation() oas.Object {
 }
 
 func toolPaths() oas.Object {
-	collection := oas.APIV1Prefix + "/tools"
-	item := oas.APIV1Prefix + "/tools/{tool_id}"
+	collection := oas.APIV1Prefix + "/voice/tools"
+	item := oas.APIV1Prefix + "/voice/tools/{tool_id}"
 	return oas.Object{
 		collection: oas.Object{
 			"get":  listToolsOperation(),
@@ -230,7 +230,7 @@ func testToolOperation() oas.Object {
 			"agent would have read as the result. Supply api_request to test an unsaved configuration in place of " +
 			"the stored one. Only api_request tools can be tested. The request really is sent, so a tool that " +
 			"writes data writes it.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{toolIDParam()},
 		"requestBody": requestBody("The arguments to call the tool with.", "TestToolRequest", testToolRequestExample()),
 		"responses": oas.Object{

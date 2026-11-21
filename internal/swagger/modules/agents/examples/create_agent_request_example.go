@@ -11,13 +11,7 @@ var CreateAgentRequestExample = types.CreateAgentRequest{
 		Language:      "en-US",
 		Timezone:      nil,
 		PhoneNumberID: nil,
-		CallDirection: "outbound",
 		Status:        "active",
-	},
-	Model: &types.ModelSection{
-		Provider:    "openai",
-		Name:        "gpt-4.1-mini",
-		Temperature: 0.3,
 	},
 	Prompt: &types.PromptSection{
 		BeginMessageMode:    "agent_speaks_first",
@@ -26,24 +20,13 @@ var CreateAgentRequestExample = types.CreateAgentRequest{
 		SystemPrompt:        "You are a helpful, friendly voice assistant on a phone call. Keep responses clear and concise, speak naturally, and stay polite and professional at all times.",
 	},
 	Voice: &types.VoiceSection{
-		Provider: "openai_realtime",
-		ElevenLabs: &types.ElevenLabsVoice{
-			VoiceID:    "DODLEQrClDo8wCz460ld",
-			VoiceName:  "Lauren",
-			VoiceModel: "eleven_flash_v2_5",
-		},
 		OpenAI: &types.OpenAIVoice{
-			VoiceID:      "alloy",
-			VoiceName:    "Alloy",
-			VoiceModel:   "tts-1",
-			Instructions: nil,
+			VoiceID:       "alloy",
+			VoiceName:     "Alloy",
+			RealtimeModel: "gpt-realtime-2.1-mini",
+			Speed:         1,
+			Volume:        1,
 		},
-	},
-	Transcriber: &types.TranscriberSection{
-		Provider:   "openai",
-		Language:   "en",
-		OpenAI:     &types.TranscriberOpenAI{Model: "gpt-4o-transcribe"},
-		ElevenLabs: &types.TranscriberElevenLabs{Model: "scribe_v1"},
 	},
 	PostCall: &types.PostCallSection{
 		AnalysisProvider: "openai",

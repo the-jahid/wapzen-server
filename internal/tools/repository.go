@@ -1,12 +1,13 @@
-// Package tools persists the actions an agent can take mid-conversation into
-// the tools table. A tool row only defines the action — which endpoint to hit,
+// Package tools persists the actions a voice agent can take mid-call into the
+// voice_tools table (chat's tools table is whiskey's and is never read here).
+// A tool row only defines the action — which endpoint to hit,
 // which number to hand the caller to, what message to send. It does nothing
-// until an agent is attached to it, which is the agents and chatagents packages'
-// half of the feature (the agent_tools and chat_agent_tools join tables, written
-// by each agent's tools.tool_ids); this package owns the definitions themselves.
+// until an agent is attached to it, which is the agents package's half of the
+// feature (the agent_tools join table, written by each agent's tools.tool_ids);
+// this package owns the definitions themselves.
 //
 // A tool is shared rather than owned: the same definition can be attached to any
-// number of agents of either kind, which is why the attachment lives in a join
+// number of agents, which is why the attachment lives in a join
 // table and a tool's own row records no agent.
 //
 // The type-specific settings are stored as JSON in one column. The variants
@@ -83,7 +84,7 @@ func (r *Repository) Create(ctx context.Context, params models.NewTool) (models.
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO tools (user_id, type, tool_name, description, config)
+		INSERT INTO voice_tools (user_id, type, tool_name, description, config)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING %s
 	`, toolColumns)
@@ -115,10 +116,10 @@ func (r *Repository) ListByUser(ctx context.Context, userID, toolType string, li
 		filter = &trimmed
 	}
 
-	const countQuery = `SELECT count(*) FROM tools WHERE user_id = $1 AND ($2::text IS NULL OR type = $2)`
+	const countQuery = `SELECT count(*) FROM voice_tools WHERE user_id = $1 AND ($2::text IS NULL OR type = $2)`
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM tools
+		FROM voice_tools
 		WHERE user_id = $1 AND ($2::text IS NULL OR type = $2)
 		ORDER BY created_at DESC, id DESC
 		LIMIT $3 OFFSET $4
@@ -159,7 +160,6 @@ func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) er
 		ids[i] = page[i].ID
 		positions[page[i].ID] = i
 		page[i].AgentIDs = []string{}
-		page[i].ChatAgentIDs = []string{}
 	}
 
 	specs := []struct {
@@ -169,10 +169,6 @@ func (r *Repository) loadAttachments(ctx context.Context, page []models.Tool) er
 		{
 			`SELECT tool_id, agent_id FROM agent_tools WHERE tool_id = ANY($1::text[]) ORDER BY tool_id, created_at, agent_id`,
 			func(t *models.Tool, id string) { t.AgentIDs = append(t.AgentIDs, id) },
-		},
-		{
-			`SELECT tool_id, chat_agent_id FROM chat_agent_tools WHERE tool_id = ANY($1::text[]) ORDER BY tool_id, created_at, chat_agent_id`,
-			func(t *models.Tool, id string) { t.ChatAgentIDs = append(t.ChatAgentIDs, id) },
 		},
 	}
 	batch := &pgx.Batch{}
@@ -216,7 +212,7 @@ func (r *Repository) withAttachments(ctx context.Context, tool models.Tool) (mod
 // ErrNotFound when no such tool exists for that user, so a tool owned by
 // somebody else is indistinguishable from one that never existed.
 func (r *Repository) GetByUser(ctx context.Context, userID, id string) (models.Tool, error) {
-	query := fmt.Sprintf(`SELECT %s FROM tools WHERE id = $1 AND user_id = $2`, toolColumns)
+	query := fmt.Sprintf(`SELECT %s FROM voice_tools WHERE id = $1 AND user_id = $2`, toolColumns)
 
 	tool, err := scanTool(r.db.QueryRow(ctx, query, id, userID))
 	if err != nil {
@@ -274,7 +270,7 @@ func (r *Repository) UpdateByUser(ctx context.Context, userID, id string, params
 	}
 
 	query := fmt.Sprintf(`
-		UPDATE tools
+		UPDATE voice_tools
 		SET %s
 		WHERE id = $1 AND user_id = $2
 		RETURNING %s
@@ -324,11 +320,11 @@ func updatedConfig(toolType string, params models.ToolUpdate) any {
 // else's reads the same as deleting one that never existed.
 //
 // Every agent attached to it loses it by the same statement: the join rows
-// cascade with the tool, so there is nothing left behind to detach. A call or
-// chat already in progress keeps the definitions it started with — it resolved
+// cascade with the tool, so there is nothing left behind to detach. A call
+// already in progress keeps the definitions it started with — it resolved
 // them when it was answered.
 func (r *Repository) DeleteByUser(ctx context.Context, userID, id string) error {
-	const query = `DELETE FROM tools WHERE id = $1 AND user_id = $2`
+	const query = `DELETE FROM voice_tools WHERE id = $1 AND user_id = $2`
 	tag, err := r.db.Exec(ctx, query, id, userID)
 	if err != nil {
 		return fmt.Errorf("delete tool: %w", err)

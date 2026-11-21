@@ -41,7 +41,7 @@ func phoneNumberResponseExample(message string) oas.Object {
 		"message": message,
 		"data":    phoneNumberExample(),
 		"links": oas.Object{
-			"self": "/v1/phone-number/phone_number_12345",
+			"self": "/v1/voice/phone-number/phone_number_12345",
 		},
 	}
 }

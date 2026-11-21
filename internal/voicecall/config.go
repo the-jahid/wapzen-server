@@ -8,10 +8,9 @@ import (
 )
 
 const (
-	// WhatsApp call audio is 16 kHz mono. OpenAI Audio Speech returns raw PCM
-	// at 24 kHz, which the standard bridge resamples before playback.
-	audioSampleRate     = 16000
-	openAITTSSampleRate = 24000
+	// WhatsApp call audio is 16 kHz mono; the Realtime session speaks 24 kHz,
+	// which the bridge resamples in both directions.
+	audioSampleRate = 16000
 
 	defaultSpeed  = 1.0
 	defaultVolume = 1.0
@@ -22,8 +21,7 @@ const (
 	defaultTranscribeModel = "gpt-4o-mini-transcribe"
 	defaultInstructions    = "You are answering a live phone call. Reply in one or two short spoken sentences. Be direct, helpful, and natural."
 
-	placeholderAPIKey           = "openai_replace_me"
-	elevenLabsPlaceholderAPIKey = "elevenlabs_replace_me"
+	placeholderAPIKey = "openai_replace_me"
 )
 
 // agentSpeaksFirst reports whether the agent opens the call rather than waiting

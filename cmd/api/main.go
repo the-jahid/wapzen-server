@@ -13,11 +13,8 @@ import (
 
 	"whatsapp-ai-caller-server/internal/activity"
 	"whatsapp-ai-caller-server/internal/agents"
-	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/auth"
 	"whatsapp-ai-caller-server/internal/calls"
-	"whatsapp-ai-caller-server/internal/chatagents"
-	"whatsapp-ai-caller-server/internal/chatconversations"
 	"whatsapp-ai-caller-server/internal/config"
 	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/embeddings"
@@ -79,9 +76,9 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := db.MigratePool(pool); err != nil {
-		fatalf("database migration failed: %v", err)
-	}
+	// No migrations here: this database is shared with whiskey-bailey-server,
+	// whose Prisma migrations (whiskey-bailey-server/prisma) own the whole
+	// schema, this server's voice tables included.
 
 	// Save each activity line under its user too (the activity_logs table).
 	activityRepo := activity.NewRepository(pool)
@@ -100,12 +97,9 @@ func main() {
 	}
 
 	agentsRepo := agents.NewRepository(pool)
-	chatAgentsRepo := chatagents.NewRepository(pool)
-	// Every new account starts with a paused starter voice agent and a paused
-	// starter chat agent, created in the same transaction as the user.
-	usersRepo := users.NewRepository(pool, agentsRepo.CreateDefault, chatAgentsRepo.CreateDefault)
-	chatConversationsRepo := chatconversations.NewRepository(pool)
-	apiKeysRepo := apikeys.NewRepository(pool)
+	// Every new account starts with a paused starter voice agent, created in
+	// the same transaction as the user.
+	usersRepo := users.NewRepository(pool, agentsRepo.CreateDefault)
 	phoneNumbersRepo := phonenumbers.NewRepository(pool)
 	callsRepo := calls.NewRepository(pool)
 	knowledgeBasesRepo := knowledgebases.NewRepository(pool)
@@ -139,15 +133,11 @@ func main() {
 		log.Printf("knowledge base indexing disabled: set OPENAI_API_KEY, PINECONE_API_KEY and PINECONE_INDEX_HOST to enable it")
 	}
 
-	whatsAppLoginManager, err := whatsapplogin.NewManager(ctx, cfg.DatabaseURL, phoneNumbersRepo, agentsRepo, chatAgentsRepo, callsRepo, knowledgeBaseRetriever)
+	whatsAppLoginManager, err := whatsapplogin.NewManager(ctx, cfg.DatabaseURL, phoneNumbersRepo, agentsRepo, callsRepo, knowledgeBaseRetriever)
 	if err != nil {
 		fatalf("WhatsApp login manager failed: %v", err)
 	}
 	defer whatsAppLoginManager.Close()
-
-	// Save the text threads the chat agents answer, so a conversation outlives
-	// the process that held it in memory and can be read back in the dashboard.
-	whatsAppLoginManager.UseChatStore(chatConversationsRepo)
 
 	// Reconnect already-paired numbers so they keep receiving messages after a
 	// restart, instead of sitting "connected" in the DB with no live client.
@@ -165,9 +155,6 @@ func main() {
 	router := routes.NewRouter(routes.Dependencies{
 		UsersRepo:                 usersRepo,
 		AgentsRepo:                agentsRepo,
-		ChatAgentsRepo:            chatAgentsRepo,
-		ChatConversationsRepo:     chatConversationsRepo,
-		APIKeysRepo:               apiKeysRepo,
 		PhoneNumbersRepo:          phoneNumbersRepo,
 		CallsRepo:                 callsRepo,
 		KnowledgeBasesRepo:        knowledgeBasesRepo,
@@ -176,14 +163,13 @@ func main() {
 		ToolsRepo:                 toolsRepo,
 		WhatsAppLoginManager:      whatsAppLoginManager,
 		ClerkWebhookSigningSecret: cfg.ClerkWebhookSigningSecret,
-		ElevenLabsAPIKey:          cfg.ElevenLabsAPIKey,
 		CORSAllowedOrigins:        cfg.CORSAllowedOrigins,
 		VerboseLogs:               cfg.VerboseLogs,
 	})
 
 	addr := ":" + cfg.Port
 
-	log.Printf("WhatsApp AI Caller server starting in %q mode", cfg.AppEnv)
+	log.Printf("WhatsApp AI Caller server starting")
 	log.Printf("Listening on   http://localhost%s", addr)
 	log.Printf("Swagger UI at  http://localhost%s/swagger/index.html", addr)
 	activity.Printf("server started")

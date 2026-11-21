@@ -21,7 +21,7 @@ import (
 )
 
 // Default and bound values for the list query parameters, mirroring the
-// documented schema for GET /v1/knowledge-base (page ≥ 1 default 1; limit 1..100
+// documented schema for GET /v1/voice/knowledge-base (page ≥ 1 default 1; limit 1..100
 // default 20). They match the agents collection's bounds today but are named
 // separately so either collection can move without dragging the other.
 const (
@@ -31,7 +31,7 @@ const (
 )
 
 // knowledgeBasesListPath is the collection URL rendered into the list links.
-const knowledgeBasesListPath = "/v1/knowledge-base"
+const knowledgeBasesListPath = "/v1/voice/knowledge-base"
 
 // KnowledgeBaseHandler serves the Knowledge Base endpoints.
 type KnowledgeBaseHandler struct {
@@ -123,7 +123,7 @@ type createKnowledgeBaseRequest struct {
 //
 // Create godoc
 // @Summary      Create Knowledge Base
-// @Description  Creates a knowledge base owned by the authenticated API key owner. knowledge_base_name is the only required field; every other field is optional and omitted settings fall back to their defaults. The vector-store namespace_id is assigned automatically and returned with the new knowledge base. Texts supplied in knowledge_base_texts are chunked, embedded and indexed into that namespace as part of the request, so the response carries the knowledge base already at status complete with its sources attached; a knowledge base created without texts starts empty at status in_progress. The create is all-or-nothing — if indexing fails the knowledge base is removed again and the request can be retried unchanged. knowledge_base_urls and knowledge_base_files (file_url) are rejected: urls have no fetcher yet, and documents are uploaded rather than linked, via POST /v1/knowledge-base/{knowledge_base_id}/sources as multipart/form-data.
+// @Description  Creates a knowledge base owned by the authenticated user. knowledge_base_name is the only required field; every other field is optional and omitted settings fall back to their defaults. The vector-store namespace_id is assigned automatically and returned with the new knowledge base. Texts supplied in knowledge_base_texts are chunked, embedded and indexed into that namespace as part of the request, so the response carries the knowledge base already at status complete with its sources attached; a knowledge base created without texts starts empty at status in_progress. The create is all-or-nothing — if indexing fails the knowledge base is removed again and the request can be retried unchanged. knowledge_base_urls and knowledge_base_files (file_url) are rejected: urls have no fetcher yet, and documents are uploaded rather than linked, via POST /v1/voice/knowledge-base/{knowledge_base_id}/sources as multipart/form-data.
 // @Tags         Knowledge Base
 // @Accept       json
 // @Produce      json
@@ -136,7 +136,7 @@ type createKnowledgeBaseRequest struct {
 // @Failure      422   {object}  models.APIResponse
 // @Failure      500   {object}  models.APIResponse
 // @Failure      503   {object}  models.APIResponse
-// @Router       /v1/knowledge-base [post]
+// @Router       /v1/voice/knowledge-base [post]
 func (h *KnowledgeBaseHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -300,7 +300,7 @@ func (h *KnowledgeBaseHandler) discardKnowledgeBase(ctx context.Context, userID 
 //
 // List godoc
 // @Summary      List Knowledge Bases
-// @Description  Returns a paginated list of the knowledge bases owned by the authenticated API key owner, newest first, each with its indexed sources.
+// @Description  Returns a paginated list of the knowledge bases owned by the authenticated user, newest first, each with its indexed sources.
 // @Tags         Knowledge Base
 // @Produce      json
 // @Security     BearerAuth
@@ -310,7 +310,7 @@ func (h *KnowledgeBaseHandler) discardKnowledgeBase(ctx context.Context, userID 
 // @Failure      400    {object}  types.ErrorEnvelope
 // @Failure      401    {object}  models.APIResponse
 // @Failure      500    {object}  models.APIResponse
-// @Router       /v1/knowledge-base [get]
+// @Router       /v1/voice/knowledge-base [get]
 func (h *KnowledgeBaseHandler) List(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -377,7 +377,7 @@ func parseKnowledgeBaseListQuery(q url.Values) (page, limit int, errs []types.Fi
 //
 // Get godoc
 // @Summary      Get Knowledge Base
-// @Description  Returns a single knowledge base by id, scoped to the authenticated API key owner, including its indexed sources.
+// @Description  Returns a single knowledge base by id, scoped to the authenticated user, including its indexed sources.
 // @Tags         Knowledge Base
 // @Produce      json
 // @Security     BearerAuth
@@ -387,7 +387,7 @@ func parseKnowledgeBaseListQuery(q url.Values) (page, limit int, errs []types.Fi
 // @Failure      401                {object}  models.APIResponse
 // @Failure      404                {object}  models.APIResponse
 // @Failure      500                {object}  models.APIResponse
-// @Router       /v1/knowledge-base/{knowledge_base_id} [get]
+// @Router       /v1/voice/knowledge-base/{knowledge_base_id} [get]
 func (h *KnowledgeBaseHandler) Get(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -443,7 +443,7 @@ type updateKnowledgeBaseRequest struct {
 //
 // Update godoc
 // @Summary      Update Knowledge Base
-// @Description  Applies a partial update to a knowledge base owned by the authenticated API key owner. Only knowledge_base_name and the indexing settings (enable_auto_refresh, max_chunk_size, min_chunk_size) may be changed; at least one must be supplied, and omitted fields keep their stored value. Chunk sizes are validated against each other using the stored values, so min_chunk_size may never end up above max_chunk_size. Changing the chunk sizes does not re-index existing sources.
+// @Description  Applies a partial update to a knowledge base owned by the authenticated user. Only knowledge_base_name and the indexing settings (enable_auto_refresh, max_chunk_size, min_chunk_size) may be changed; at least one must be supplied, and omitted fields keep their stored value. Chunk sizes are validated against each other using the stored values, so min_chunk_size may never end up above max_chunk_size. Changing the chunk sizes does not re-index existing sources.
 // @Tags         Knowledge Base
 // @Accept       json
 // @Produce      json
@@ -456,7 +456,7 @@ type updateKnowledgeBaseRequest struct {
 // @Failure      404                {object}  models.APIResponse
 // @Failure      409                {object}  models.APIResponse
 // @Failure      500                {object}  models.APIResponse
-// @Router       /v1/knowledge-base/{knowledge_base_id} [patch]
+// @Router       /v1/voice/knowledge-base/{knowledge_base_id} [patch]
 func (h *KnowledgeBaseHandler) Update(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -642,7 +642,7 @@ func validateUpdateKnowledgeBaseRequest(req updateKnowledgeBaseRequest) []types.
 //
 // Delete godoc
 // @Summary      Delete Knowledge Base
-// @Description  Deletes a knowledge base by id, scoped to the authenticated API key owner, together with its sources and every vector indexed under its namespace. Deleting one that does not exist, or that belongs to somebody else, returns 404.
+// @Description  Deletes a knowledge base by id, scoped to the authenticated user, together with its sources and every vector indexed under its namespace. Deleting one that does not exist, or that belongs to somebody else, returns 404.
 // @Tags         Knowledge Base
 // @Produce      json
 // @Security     BearerAuth
@@ -652,7 +652,7 @@ func validateUpdateKnowledgeBaseRequest(req updateKnowledgeBaseRequest) []types.
 // @Failure      401                {object}  models.APIResponse
 // @Failure      404                {object}  models.APIResponse
 // @Failure      500                {object}  models.APIResponse
-// @Router       /v1/knowledge-base/{knowledge_base_id} [delete]
+// @Router       /v1/voice/knowledge-base/{knowledge_base_id} [delete]
 func (h *KnowledgeBaseHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {

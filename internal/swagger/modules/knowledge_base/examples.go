@@ -69,7 +69,7 @@ func completeKnowledgeBaseExample() oas.Object {
 }
 
 func selfLink() oas.Object {
-	return oas.Object{"self": "/v1/knowledge-base/knowledge_base_a456426614174000"}
+	return oas.Object{"self": "/v1/voice/knowledge-base/knowledge_base_a456426614174000"}
 }
 
 // ---------------------------------------------------------------------------
@@ -180,11 +180,11 @@ func listKnowledgeBasesResponseExample() oas.Object {
 			},
 		},
 		"links": oas.Object{
-			"self":     "/v1/knowledge-base?page=1&limit=20",
-			"first":    "/v1/knowledge-base?page=1&limit=20",
+			"self":     "/v1/voice/knowledge-base?page=1&limit=20",
+			"first":    "/v1/voice/knowledge-base?page=1&limit=20",
 			"previous": nil,
 			"next":     nil,
-			"last":     "/v1/knowledge-base?page=1&limit=20",
+			"last":     "/v1/voice/knowledge-base?page=1&limit=20",
 		},
 	}
 }

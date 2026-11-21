@@ -16,12 +16,45 @@ definitions:
       self:
         type: string
     type: object
-  constants.CallDirection:
-    enum:
-    - outbound
-    type: string
-    x-enum-varnames:
-    - CallDirectionDefault
+  agenttools.TestRequest:
+    properties:
+      body:
+        type: string
+      headers:
+        additionalProperties:
+          type: string
+        type: object
+      method:
+        type: string
+      url:
+        type: string
+    type: object
+  agenttools.TestResult:
+    properties:
+      body:
+        type: string
+      content_type:
+        type: string
+      duration_ms:
+        type: integer
+      error:
+        description: |-
+          Error explains a request that never got a status: an argument missing, a
+          timeout, a refused address.
+        type: string
+      model_result:
+        description: ModelResult is the tool result an agent would read for this response.
+        type: string
+      ok:
+        description: OK is true when the endpoint answered with a 2xx or 3xx status.
+        type: boolean
+      request:
+        $ref: '#/definitions/agenttools.TestRequest'
+      status_code:
+        type: integer
+      truncated:
+        type: boolean
+    type: object
   handlers.addKnowledgeBaseSourcesRequest:
     properties:
       knowledge_base_files:
@@ -36,41 +69,6 @@ definitions:
         items:
           type: string
         type: array
-    type: object
-  handlers.addLibraryVoiceRequest:
-    properties:
-      name:
-        example: Brian
-        type: string
-    type: object
-  handlers.addedVoiceData:
-    properties:
-      name:
-        example: Brian
-        type: string
-      voice_id:
-        example: nPczCjzI2devNBz1zQrb
-        type: string
-    type: object
-  handlers.addedVoiceEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/handlers.addedVoiceData'
-      message:
-        type: string
-      success:
-        type: boolean
-    type: object
-  handlers.apiKeyListEnvelope:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/models.APIKey'
-        type: array
-      message:
-        type: string
-      success:
-        type: boolean
     type: object
   handlers.callDeleteData:
     properties:
@@ -138,12 +136,6 @@ definitions:
         example: 14
         type: integer
     type: object
-  handlers.createAPIKeyRequest:
-    properties:
-      name:
-        example: Production
-        type: string
-    type: object
   handlers.createCallRequest:
     properties:
       agent_id:
@@ -187,24 +179,6 @@ definitions:
         type: number
       campaign_name:
         type: string
-    type: object
-  handlers.createdAPIKeyEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/models.CreatedAPIKey'
-      message:
-        type: string
-      success:
-        type: boolean
-    type: object
-  handlers.defaultAPIKeyEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/models.APIKey'
-      message:
-        type: string
-      success:
-        type: boolean
     type: object
   handlers.knowledgeBaseDeleteData:
     properties:
@@ -299,6 +273,17 @@ definitions:
         type: boolean
       label:
         example: Main support line
+        type: string
+      pairing_method:
+        description: |-
+          PairingMethod is "qr" (the default: scan a QR code) or "phone_code": link
+          by typing an 8-character code into WhatsApp, for a user who cannot scan
+          because the dashboard is open on the phone itself. phone_code needs
+          phone_number and starts a new login, so it takes no phone_number_id.
+        enum:
+        - qr
+        - phone_code
+        example: qr
         type: string
       phone_number:
         example: "+15551234567"
@@ -405,24 +390,6 @@ definitions:
       success:
         type: boolean
     type: object
-  handlers.revokedAPIKeyData:
-    properties:
-      id:
-        example: 8c3f910d-4f81-4e8e-a4e0-54a9c9d0e55f
-        type: string
-      revoked:
-        example: true
-        type: boolean
-    type: object
-  handlers.revokedAPIKeyEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/handlers.revokedAPIKeyData'
-      message:
-        type: string
-      success:
-        type: boolean
-    type: object
   handlers.toolDeleteData:
     properties:
       deleted:
@@ -487,6 +454,23 @@ definitions:
       type:
         type: string
     type: object
+  handlers.toolTestEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/agenttools.TestResult'
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  handlers.toolTestRequest:
+    properties:
+      api_request:
+        $ref: '#/definitions/models.ToolAPIRequestConfig'
+      arguments:
+        additionalProperties: {}
+        type: object
+    type: object
   handlers.updateCallRequest:
     properties:
       end_reason:
@@ -515,101 +499,6 @@ definitions:
         type: string
       success:
         type: boolean
-    type: object
-  handlers.voiceListData:
-    properties:
-      has_more:
-        type: boolean
-      next_page:
-        type: integer
-      next_page_token:
-        type: string
-      total_count:
-        type: integer
-      voices:
-        items:
-          $ref: '#/definitions/handlers.voiceSummary'
-        type: array
-    type: object
-  handlers.voiceListEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/handlers.voiceListData'
-      message:
-        type: string
-      success:
-        type: boolean
-    type: object
-  handlers.voiceSummary:
-    properties:
-      accent:
-        type: string
-      added:
-        type: boolean
-      age:
-        type: string
-      category:
-        type: string
-      cloned_by_count:
-        type: integer
-      description:
-        type: string
-      descriptive:
-        type: string
-      featured:
-        type: boolean
-      gender:
-        type: string
-      image_url:
-        type: string
-      language:
-        type: string
-      languages:
-        items:
-          type: string
-        type: array
-      name:
-        type: string
-      owned:
-        description: |-
-          Owned voices live in the workspace and can be saved on an agent as-is;
-          library voices must be added first (see AddLibraryVoice).
-        type: boolean
-      preview_url:
-        type: string
-      public_owner_id:
-        type: string
-      use_case:
-        type: string
-      voice_id:
-        type: string
-    type: object
-  models.APIKey:
-    properties:
-      createdAt:
-        example: "2026-07-02T10:00:00Z"
-        type: string
-      id:
-        example: 8c3f910d-4f81-4e8e-a4e0-54a9c9d0e55f
-        type: string
-      isDefault:
-        example: true
-        type: boolean
-      keyPrefix:
-        example: wcai_Bv6f
-        type: string
-      last4:
-        example: 9xQ2
-        type: string
-      lastUsedAt:
-        example: "2026-07-02T10:00:00Z"
-        type: string
-      name:
-        example: Production
-        type: string
-      updatedAt:
-        example: "2026-07-02T10:00:00Z"
-        type: string
     type: object
   models.APIResponse:
     properties:
@@ -804,36 +693,6 @@ definitions:
         example: 7420
         type: integer
     type: object
-  models.CreatedAPIKey:
-    properties:
-      createdAt:
-        example: "2026-07-02T10:00:00Z"
-        type: string
-      id:
-        example: 8c3f910d-4f81-4e8e-a4e0-54a9c9d0e55f
-        type: string
-      isDefault:
-        example: true
-        type: boolean
-      key:
-        example: wcai_Bv6fLwL8y6bpiGvM_rJX8oBsZw8QSg6DSxQ7VhA_9xQ2
-        type: string
-      keyPrefix:
-        example: wcai_Bv6f
-        type: string
-      last4:
-        example: 9xQ2
-        type: string
-      lastUsedAt:
-        example: "2026-07-02T10:00:00Z"
-        type: string
-      name:
-        example: Production
-        type: string
-      updatedAt:
-        example: "2026-07-02T10:00:00Z"
-        type: string
-    type: object
   models.KnowledgeBase:
     properties:
       agent_id:
@@ -981,11 +840,36 @@ definitions:
       last_connected_at:
         example: "2026-07-03T10:00:00Z"
         type: string
+      pairing_code:
+        description: |-
+          PairingCode is the 8-character code a user types into WhatsApp (Linked
+          devices › Link with phone number instead) when they cannot scan the QR
+          code, such as when the dashboard is open on the phone itself. It is only
+          set on an unscanned login that asked for one, and is never stored.
+        example: ABCD-EFGH
+        type: string
+      pairing_expires_in_ms:
+        description: |-
+          PairingExpiresInMs is how long pairing_code can still be typed in, counted
+          from when this response was built. The code lives as long as the login's
+          socket, which WhatsApp closes about 160s after the login started. Only set
+          alongside pairing_code.
+        example: 140000
+        type: integer
       phone_number:
         example: "+15551234567"
         type: string
       qr_code:
         type: string
+      qr_expires_in_ms:
+        description: |-
+          QRExpiresInMs is how long the QR code in qr_code stays scannable, counted
+          from when this response was built: WhatsApp gives the first code 60s and
+          each later one 20s. A duration rather than a timestamp, so the page's
+          countdown is right even when the browser's clock is not. Only set on an
+          unscanned login.
+        example: 17000
+        type: integer
       status:
         example: pending_qr
         type: string
@@ -1000,21 +884,17 @@ definitions:
     properties:
       agent_ids:
         description: |-
-          AgentIDs and ChatAgentIDs are the agents this tool is attached to, empty
-          while it is attached to none. A tool is shared: the same definition can be
-          attached to any number of agents of either kind. Read-only here: a tool is
-          attached by writing that agent's tools.tool_ids, so the fact has one write
-          path rather than two that can disagree. They are returned so a client can
-          see where a tool is in use before it changes or deletes one.
+          AgentIDs are the agents this tool is attached to, empty while it is
+          attached to none. A tool is shared: the same definition can be attached
+          to any number of agents. Read-only here: a tool is attached by writing
+          that agent's tools.tool_ids, so the fact has one write path rather than
+          two that can disagree. They are returned so a client can see where a tool
+          is in use before it changes or deletes one.
         items:
           type: string
         type: array
       api_request:
         $ref: '#/definitions/models.ToolAPIRequestConfig'
-      chat_agent_ids:
-        items:
-          type: string
-        type: array
       created_at:
         example: "2026-08-24T10:00:00Z"
         type: string
@@ -1110,6 +990,11 @@ definitions:
     type: object
   models.User:
     properties:
+      blockedAt:
+        description: |-
+          BlockedAt is set when an operator has blocked the account; auth then
+          refuses every request it makes (see middleware.Auth).
+        type: string
       createdAt:
         example: "2026-06-30T10:00:00Z"
         type: string
@@ -1139,16 +1024,12 @@ definitions:
         type: string
       knowledge_base:
         $ref: '#/definitions/types.KnowledgeBaseSection'
-      model:
-        $ref: '#/definitions/types.ModelSection'
       post_call:
         $ref: '#/definitions/types.PostCallSection'
       prompt:
         $ref: '#/definitions/types.PromptSection'
       tools:
         $ref: '#/definitions/types.ToolsSection'
-      transcriber:
-        $ref: '#/definitions/types.TranscriberSection'
       updated_at:
         type: string
       voice:
@@ -1156,8 +1037,6 @@ definitions:
     type: object
   types.AgentSection:
     properties:
-      call_direction:
-        $ref: '#/definitions/constants.CallDirection'
       language:
         type: string
       name:
@@ -1175,27 +1054,14 @@ definitions:
         $ref: '#/definitions/types.AgentSection'
       knowledge_base:
         $ref: '#/definitions/types.KnowledgeBaseSection'
-      model:
-        $ref: '#/definitions/types.ModelSection'
       post_call:
         $ref: '#/definitions/types.PostCallSection'
       prompt:
         $ref: '#/definitions/types.PromptSection'
       tools:
         $ref: '#/definitions/types.ToolsSection'
-      transcriber:
-        $ref: '#/definitions/types.TranscriberSection'
       voice:
         $ref: '#/definitions/types.VoiceSection'
-    type: object
-  types.ElevenLabsVoice:
-    properties:
-      voice_id:
-        type: string
-      voice_model:
-        type: string
-      voice_name:
-        type: string
     type: object
   types.ErrorEnvelope:
     properties:
@@ -1240,26 +1106,13 @@ definitions:
       pagination:
         $ref: '#/definitions/types.Pagination'
     type: object
-  types.ModelSection:
-    properties:
-      name:
-        type: string
-      provider:
-        type: string
-      temperature:
-        type: number
-    type: object
   types.OpenAIVoice:
     properties:
-      instructions:
-        type: string
       realtime_model:
         type: string
       speed:
         type: number
       voice_id:
-        type: string
-      voice_model:
         type: string
       voice_name:
         type: string
@@ -1317,35 +1170,10 @@ definitions:
           type: string
         type: array
     type: object
-  types.TranscriberElevenLabs:
-    properties:
-      model:
-        type: string
-    type: object
-  types.TranscriberOpenAI:
-    properties:
-      model:
-        type: string
-    type: object
-  types.TranscriberSection:
-    properties:
-      elevenlabs:
-        $ref: '#/definitions/types.TranscriberElevenLabs'
-      language:
-        type: string
-      openai:
-        $ref: '#/definitions/types.TranscriberOpenAI'
-      provider:
-        type: string
-    type: object
   types.VoiceSection:
     properties:
-      elevenlabs:
-        $ref: '#/definitions/types.ElevenLabsVoice'
       openai:
         $ref: '#/definitions/types.OpenAIVoice'
-      provider:
-        type: string
     type: object
 host: localhost:8080
 info:
@@ -1565,9 +1393,10 @@ paths:
       description: Applies a partial update to an outbound agent owned by the authenticated
         user. Only the supplied fields are changed; absent fields keep their stored
         value. Assigning agent.phone_number_id is rejected with 409 when another agent
-        already uses that phone number. Sending knowledge_base.knowledge_base_ids
-        replaces the agent's knowledge base attachments wholesale; omitting it leaves
-        them untouched.
+        already uses that phone number. Assigning a number the agent did not already
+        have also sets its status to active, unless agent.status is sent in the same
+        request. Sending knowledge_base.knowledge_base_ids replaces the agent's knowledge
+        base attachments wholesale; omitting it leaves them untouched.
       parameters:
       - description: Agent id
         in: path
@@ -1613,151 +1442,10 @@ paths:
       summary: Update Agent
       tags:
       - agents
-  /v1/api-keys:
-    get:
-      description: Returns metadata for the authenticated user's active API keys.
-        Secrets are never returned after creation.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.apiKeyListEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: List API keys
-      tags:
-      - apiKeys
-    post:
-      consumes:
-      - application/json
-      description: Creates a new API key for the authenticated user and returns the
-        bearer secret once. Store the key securely; future list responses only include
-        metadata.
-      parameters:
-      - description: API key name
-        in: body
-        name: body
-        schema:
-          $ref: '#/definitions/handlers.createAPIKeyRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/handlers.createdAPIKeyEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Create API key
-      tags:
-      - apiKeys
-  /v1/api-keys/{api_key_id}:
-    delete:
-      description: Deletes an API key owned by the authenticated user. Deleted keys
-        can no longer be used for bearer authentication. A user cannot delete their
-        only remaining active API key.
-      parameters:
-      - description: API key id
-        in: path
-        name: api_key_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.revokedAPIKeyEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Delete API key
-      tags:
-      - apiKeys
-  /v1/api-keys/{api_key_id}/default:
-    patch:
-      description: Marks an active API key owned by the authenticated user as the
-        default API key. Exactly one active key is default per user.
-      parameters:
-      - description: API key id
-        in: path
-        name: api_key_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.defaultAPIKeyEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Set default API key
-      tags:
-      - apiKeys
   /v1/calls:
     get:
       description: Returns a paginated list of the calls handled for the authenticated
-        API key owner, newest first.
+        user, newest first.
       parameters:
       - description: Page number (1-based)
         in: query
@@ -1795,11 +1483,11 @@ paths:
       consumes:
       - application/json
       description: Places an outbound WhatsApp call from a connected phone number
-        owned by the authenticated API key owner. The agent that speaks is the one
-        assigned to that phone number; agent_id is optional and only asserts which
-        agent that is. Returns as soon as the callee's phone is ringing — the returned
-        call starts in the "received" status and reaches "answered" when the callee
-        picks up, or "declined" if they cut it while it rings.
+        owned by the authenticated user. The agent that speaks is the one assigned
+        to that phone number; agent_id is optional and only asserts which agent that
+        is. Returns as soon as the callee's phone is ringing — the returned call starts
+        in the "received" status and reaches "answered" when the callee picks up,
+        or "declined" if they cut it while it rings.
       parameters:
       - description: The call to place
         in: body
@@ -1964,380 +1652,10 @@ paths:
       summary: Update Call
       tags:
       - Calls
-  /v1/knowledge-base:
-    get:
-      description: Returns a paginated list of the knowledge bases owned by the authenticated
-        API key owner, newest first, each with its indexed sources.
-      parameters:
-      - description: Page number (1-based)
-        in: query
-        name: page
-        type: integer
-      - description: Items per page (1-100)
-        in: query
-        name: limit
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseListEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: List Knowledge Bases
-      tags:
-      - Knowledge Base
-    post:
-      consumes:
-      - application/json
-      description: 'Creates a knowledge base owned by the authenticated API key owner.
-        knowledge_base_name is the only required field; every other field is optional
-        and omitted settings fall back to their defaults. The vector-store namespace_id
-        is assigned automatically and returned with the new knowledge base. Texts
-        supplied in knowledge_base_texts are chunked, embedded and indexed into that
-        namespace as part of the request, so the response carries the knowledge base
-        already at status complete with its sources attached; a knowledge base created
-        without texts starts empty at status in_progress. The create is all-or-nothing
-        — if indexing fails the knowledge base is removed again and the request can
-        be retried unchanged. knowledge_base_urls and knowledge_base_files (file_url)
-        are rejected: urls have no fetcher yet, and documents are uploaded rather
-        than linked, via POST /v1/knowledge-base/{knowledge_base_id}/sources as multipart/form-data.'
-      parameters:
-      - description: The knowledge base configuration to create
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.createKnowledgeBaseRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "422":
-          description: Unprocessable Entity
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Create Knowledge Base
-      tags:
-      - Knowledge Base
-  /v1/knowledge-base/{knowledge_base_id}:
-    delete:
-      description: Deletes a knowledge base by id, scoped to the authenticated API
-        key owner, together with its sources and every vector indexed under its namespace.
-        Deleting one that does not exist, or that belongs to somebody else, returns
-        404.
-      parameters:
-      - description: Knowledge base id
-        in: path
-        name: knowledge_base_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseDeleteEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Delete Knowledge Base
-      tags:
-      - Knowledge Base
-    get:
-      description: Returns a single knowledge base by id, scoped to the authenticated
-        API key owner, including its indexed sources.
-      parameters:
-      - description: Knowledge base id
-        in: path
-        name: knowledge_base_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Get Knowledge Base
-      tags:
-      - Knowledge Base
-    patch:
-      consumes:
-      - application/json
-      description: Applies a partial update to a knowledge base owned by the authenticated
-        API key owner. Only knowledge_base_name and the indexing settings (enable_auto_refresh,
-        max_chunk_size, min_chunk_size) may be changed; at least one must be supplied,
-        and omitted fields keep their stored value. Chunk sizes are validated against
-        each other using the stored values, so min_chunk_size may never end up above
-        max_chunk_size. Changing the chunk sizes does not re-index existing sources.
-      parameters:
-      - description: Knowledge base id
-        in: path
-        name: knowledge_base_id
-        required: true
-        type: string
-      - description: Fields to change
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.updateKnowledgeBaseRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Update Knowledge Base
-      tags:
-      - Knowledge Base
-  /v1/knowledge-base/{knowledge_base_id}/sources:
-    post:
-      consumes:
-      - application/json
-      - multipart/form-data
-      description: 'Adds sources to an existing knowledge base owned by the authenticated
-        API key owner and indexes them into its vector-store namespace. Sources arrive
-        one of two ways. A JSON body carries raw texts in knowledge_base_texts. A
-        multipart/form-data body uploads documents in repeated "files" parts, optionally
-        named by repeated "titles" parts (the nth title belongs to the nth file, and
-        a blank or missing one falls back to the filename); the server extracts the
-        text from each upload — .txt, .md, .csv, .tsv, .json, .yaml, .xml, .log, .rst,
-        .html, .docx and .pdf are read — so nothing is parsed client-side. Either
-        way the resulting text is chunked using the knowledge base''s own max_chunk_size
-        and min_chunk_size, embedded, and written under its namespace_id with the
-        source title as the record id; a source that splits into several chunks stores
-        the first under the title and the rest under "<title>#2", "<title>#3" and
-        so on. Titles must be printable ASCII, must not contain ''#'', and must be
-        unique within the knowledge base. Indexing runs synchronously, so the knowledge
-        base is returned already at status complete with the new sources attached.
-        knowledge_base_urls and the JSON knowledge_base_files (file_url) form are
-        still rejected: urls have no fetcher yet, and a file is uploaded rather than
-        linked. The request is all-or-nothing — a failure to index leaves the knowledge
-        base exactly as it was, at status error.'
-      parameters:
-      - description: Knowledge base id
-        in: path
-        name: knowledge_base_id
-        required: true
-        type: string
-      - description: The raw texts to add (application/json)
-        in: body
-        name: body
-        schema:
-          $ref: '#/definitions/handlers.addKnowledgeBaseSourcesRequest'
-      - description: Documents to extract and index (multipart/form-data; repeat the
-          field for several files)
-        in: formData
-        name: files
-        type: file
-      - description: Optional source titles, one per file in the same order (multipart/form-data)
-        in: formData
-        name: titles
-        type: string
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "413":
-          description: Request Entity Too Large
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "422":
-          description: Unprocessable Entity
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Add Knowledge Base Sources
-      tags:
-      - Knowledge Base
-  /v1/knowledge-base/{knowledge_base_id}/sources/{source_id}:
-    delete:
-      description: Removes a single source from a knowledge base owned by the authenticated
-        API key owner, together with every vector it wrote into the knowledge base's
-        namespace. The knowledge base itself and its other sources are left untouched,
-        and its chunking configuration is not changed. The vectors are removed before
-        the source row, so a failure to reach the vector store leaves the source in
-        place to be retried rather than orphaning chunks that agents would keep retrieving.
-        Deleting a source that does not exist, or one belonging to another knowledge
-        base, returns 404.
-      parameters:
-      - description: Knowledge base id
-        in: path
-        name: knowledge_base_id
-        required: true
-        type: string
-      - description: Knowledge base source id
-        in: path
-        name: source_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.knowledgeBaseSourceDeleteEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "502":
-          description: Bad Gateway
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Delete Knowledge Base Source
-      tags:
-      - Knowledge Base
   /v1/outbound-campaigns:
     get:
       description: Returns a paginated list of the outbound campaigns owned by the
-        authenticated API key owner, newest first, each with its current counters.
+        authenticated user, newest first, each with its current counters.
       parameters:
       - description: Page number (1-based)
         in: query
@@ -2378,14 +1696,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: 'Creates an outbound campaign owned by the authenticated API key
-        owner. campaign_name is the only required field and must be unique among the
-        owner''s campaigns. The campaign is created at status draft with every counter
-        at zero; omitting budget_usd leaves it uncapped. agent_id is optional here
-        but required before the campaign can run: it must name one of the owner''s
-        agents that already has a phone number assigned, and that agent''s number
-        is the one the campaign dials from — a campaign never names a number of its
-        own.'
+      description: 'Creates an outbound campaign owned by the authenticated user.
+        campaign_name is the only required field and must be unique among the owner''s
+        campaigns. The campaign is created at status draft with every counter at zero;
+        omitting budget_usd leaves it uncapped. agent_id is optional here but required
+        before the campaign can run: it must name one of the owner''s agents that
+        already has a phone number assigned, and that agent''s number is the one the
+        campaign dials from — a campaign never names a number of its own.'
       parameters:
       - description: Campaign to create
         in: body
@@ -2423,9 +1740,9 @@ paths:
       - Outbound Campaign
   /v1/outbound-campaigns/{campaign_id}:
     delete:
-      description: Deletes a campaign by id, scoped to the authenticated API key owner.
-        A running campaign is refused with 409; pause it first. Calls the campaign
-        already placed are not deleted.
+      description: Deletes a campaign by id, scoped to the authenticated user. A running
+        campaign is refused with 409; pause it first. Calls the campaign already placed
+        are not deleted.
       parameters:
       - description: Campaign id
         in: path
@@ -2466,8 +1783,8 @@ paths:
       - Outbound Campaign
     get:
       description: Returns a single outbound campaign by id, scoped to the authenticated
-        API key owner, with its counters and the pickup_rate and success_rate derived
-        from them.
+        user, with its counters and the pickup_rate and success_rate derived from
+        them.
       parameters:
       - description: Campaign id
         in: path
@@ -2506,16 +1823,16 @@ paths:
       consumes:
       - application/json
       description: Applies a partial update to a campaign owned by the authenticated
-        API key owner. Only campaign_name, status, budget_usd and agent_id may be
-        changed; at least one field must be supplied and omitted fields keep their
-        stored value. Send budget_usd null to remove a spend cap, or agent_id null
-        to detach the agent. agent_id must name one of the owner's agents that has
-        a phone number assigned; the campaign dials from that agent's number, which
-        is why the number itself is read-only. Legal status moves are draft/paused
-        to running, running to paused or completed, and any live status to failed;
-        completed and failed are terminal. A campaign cannot be running without an
-        agent, so starting one without an agent, or detaching the agent of a running
-        one, is refused with 409.
+        user. Only campaign_name, status, budget_usd and agent_id may be changed;
+        at least one field must be supplied and omitted fields keep their stored value.
+        Send budget_usd null to remove a spend cap, or agent_id null to detach the
+        agent. agent_id must name one of the owner's agents that has a phone number
+        assigned; the campaign dials from that agent's number, which is why the number
+        itself is read-only. Legal status moves are draft/paused to running, running
+        to paused or completed, and any live status to failed; completed and failed
+        are terminal. A campaign cannot be running without an agent, so starting one
+        without an agent, or detaching the agent of a running one, is refused with
+        409.
       parameters:
       - description: Campaign id
         in: path
@@ -2649,7 +1966,396 @@ paths:
       summary: List Campaign Calls
       tags:
       - Outbound Campaign
-  /v1/phone-number:
+  /v1/users/me:
+    get:
+      description: Returns the application user for the authenticated Clerk session,
+        including the internal user id.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.userEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - users
+  /v1/voice/knowledge-base:
+    get:
+      description: Returns a paginated list of the knowledge bases owned by the authenticated
+        user, newest first, each with its indexed sources.
+      parameters:
+      - description: Page number (1-based)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (1-100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseListEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/types.ErrorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: List Knowledge Bases
+      tags:
+      - Knowledge Base
+    post:
+      consumes:
+      - application/json
+      description: 'Creates a knowledge base owned by the authenticated user. knowledge_base_name
+        is the only required field; every other field is optional and omitted settings
+        fall back to their defaults. The vector-store namespace_id is assigned automatically
+        and returned with the new knowledge base. Texts supplied in knowledge_base_texts
+        are chunked, embedded and indexed into that namespace as part of the request,
+        so the response carries the knowledge base already at status complete with
+        its sources attached; a knowledge base created without texts starts empty
+        at status in_progress. The create is all-or-nothing — if indexing fails the
+        knowledge base is removed again and the request can be retried unchanged.
+        knowledge_base_urls and knowledge_base_files (file_url) are rejected: urls
+        have no fetcher yet, and documents are uploaded rather than linked, via POST
+        /v1/voice/knowledge-base/{knowledge_base_id}/sources as multipart/form-data.'
+      parameters:
+      - description: The knowledge base configuration to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.createKnowledgeBaseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/types.ErrorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Create Knowledge Base
+      tags:
+      - Knowledge Base
+  /v1/voice/knowledge-base/{knowledge_base_id}:
+    delete:
+      description: Deletes a knowledge base by id, scoped to the authenticated user,
+        together with its sources and every vector indexed under its namespace. Deleting
+        one that does not exist, or that belongs to somebody else, returns 404.
+      parameters:
+      - description: Knowledge base id
+        in: path
+        name: knowledge_base_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseDeleteEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Knowledge Base
+      tags:
+      - Knowledge Base
+    get:
+      description: Returns a single knowledge base by id, scoped to the authenticated
+        user, including its indexed sources.
+      parameters:
+      - description: Knowledge base id
+        in: path
+        name: knowledge_base_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Knowledge Base
+      tags:
+      - Knowledge Base
+    patch:
+      consumes:
+      - application/json
+      description: Applies a partial update to a knowledge base owned by the authenticated
+        user. Only knowledge_base_name and the indexing settings (enable_auto_refresh,
+        max_chunk_size, min_chunk_size) may be changed; at least one must be supplied,
+        and omitted fields keep their stored value. Chunk sizes are validated against
+        each other using the stored values, so min_chunk_size may never end up above
+        max_chunk_size. Changing the chunk sizes does not re-index existing sources.
+      parameters:
+      - description: Knowledge base id
+        in: path
+        name: knowledge_base_id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.updateKnowledgeBaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/types.ErrorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Knowledge Base
+      tags:
+      - Knowledge Base
+  /v1/voice/knowledge-base/{knowledge_base_id}/sources:
+    post:
+      consumes:
+      - application/json
+      - multipart/form-data
+      description: 'Adds sources to an existing knowledge base owned by the authenticated
+        user and indexes them into its vector-store namespace. Sources arrive one
+        of two ways. A JSON body carries raw texts in knowledge_base_texts. A multipart/form-data
+        body uploads documents in repeated "files" parts, optionally named by repeated
+        "titles" parts (the nth title belongs to the nth file, and a blank or missing
+        one falls back to the filename); the server extracts the text from each upload
+        — .txt, .md, .csv, .tsv, .json, .yaml, .xml, .log, .rst, .html, .docx and
+        .pdf are read — so nothing is parsed client-side. Either way the resulting
+        text is chunked using the knowledge base''s own max_chunk_size and min_chunk_size,
+        embedded, and written under its namespace_id with the source title as the
+        record id; a source that splits into several chunks stores the first under
+        the title and the rest under "<title>#2", "<title>#3" and so on. Titles must
+        be printable ASCII, must not contain ''#'', and must be unique within the
+        knowledge base. Indexing runs synchronously, so the knowledge base is returned
+        already at status complete with the new sources attached. knowledge_base_urls
+        and the JSON knowledge_base_files (file_url) form are still rejected: urls
+        have no fetcher yet, and a file is uploaded rather than linked. The request
+        is all-or-nothing — a failure to index leaves the knowledge base exactly as
+        it was, at status error.'
+      parameters:
+      - description: Knowledge base id
+        in: path
+        name: knowledge_base_id
+        required: true
+        type: string
+      - description: The raw texts to add (application/json)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handlers.addKnowledgeBaseSourcesRequest'
+      - description: Documents to extract and index (multipart/form-data; repeat the
+          field for several files)
+        in: formData
+        name: files
+        type: file
+      - description: Optional source titles, one per file in the same order (multipart/form-data)
+        in: formData
+        name: titles
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/types.ErrorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Add Knowledge Base Sources
+      tags:
+      - Knowledge Base
+  /v1/voice/knowledge-base/{knowledge_base_id}/sources/{source_id}:
+    delete:
+      description: Removes a single source from a knowledge base owned by the authenticated
+        user, together with every vector it wrote into the knowledge base's namespace.
+        The knowledge base itself and its other sources are left untouched, and its
+        chunking configuration is not changed. The vectors are removed before the
+        source row, so a failure to reach the vector store leaves the source in place
+        to be retried rather than orphaning chunks that agents would keep retrieving.
+        Deleting a source that does not exist, or one belonging to another knowledge
+        base, returns 404.
+      parameters:
+      - description: Knowledge base id
+        in: path
+        name: knowledge_base_id
+        required: true
+        type: string
+      - description: Knowledge base source id
+        in: path
+        name: source_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.knowledgeBaseSourceDeleteEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Knowledge Base Source
+      tags:
+      - Knowledge Base
+  /v1/voice/phone-number:
     get:
       description: Returns the WhatsApp phone numbers owned by the authenticated user.
       produces:
@@ -2672,7 +2378,7 @@ paths:
       summary: Get phone numbers list
       tags:
       - phone-number
-  /v1/phone-number/{phone_number_id}:
+  /v1/voice/phone-number/{phone_number_id}:
     get:
       description: Returns a single WhatsApp phone number by id, scoped to the authenticated
         user.
@@ -2710,14 +2416,16 @@ paths:
       summary: Get one phone number
       tags:
       - phone-number
-  /v1/phone-number/login:
+  /v1/voice/phone-number/login:
     post:
       consumes:
       - application/json
       description: Starts a WhatsApp Linked Devices QR login session. Pass phone_number_id
         to restart a non-connected login; add force_repair to replace a connected
         companion without deleting its row. Pass agent_id to assign the linked number
-        to that agent as soon as the scan connects it.
+        to that agent as soon as the scan connects it. Pass pairing_method phone_code
+        with phone_number to get an 8-character pairing_code to type into WhatsApp
+        instead of scanning.
       parameters:
       - description: Optional phone number metadata
         in: body
@@ -2752,7 +2460,7 @@ paths:
       summary: Start WhatsApp QR login
       tags:
       - phone-number
-  /v1/phone-number/logout:
+  /v1/voice/phone-number/logout:
     post:
       consumes:
       - application/json
@@ -2793,7 +2501,7 @@ paths:
       summary: Logout
       tags:
       - phone-number
-  /v1/tools:
+  /v1/voice/tools:
     get:
       description: Returns a paginated list of the tools owned by the authenticated
         user, newest first. Pass type to narrow the page to one tool type.
@@ -2878,7 +2586,7 @@ paths:
       summary: Create Tool
       tags:
       - Tools
-  /v1/tools/{tool_id}:
+  /v1/voice/tools/{tool_id}:
     delete:
       description: Deletes a tool owned by the authenticated user and detaches it
         from every agent using it. Calls already in progress keep the tool for the
@@ -2998,198 +2706,56 @@ paths:
       summary: Update Tool
       tags:
       - Tools
-  /v1/users/me:
-    get:
-      description: Returns the application user for the authenticated Clerk session,
-        including the internal user id.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.userEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Get current user
-      tags:
-      - users
-  /v1/voices/elevenlabs:
-    get:
-      description: Proxies the ElevenLabs voices API using the server's workspace
-        key. These voices are usable for calls immediately, unlike library voices.
-        Pagination uses the opaque next_page_token returned by ElevenLabs.
-      parameters:
-      - description: Free-text search
-        in: query
-        name: search
-        type: string
-      - description: Voice category (premade, cloned, generated, professional)
-        in: query
-        name: category
-        type: string
-      - description: Voice type filter
-        in: query
-        name: voice_type
-        type: string
-      - description: Results per page (1-100)
-        in: query
-        name: page_size
-        type: integer
-      - description: Pagination token from a previous response
-        in: query
-        name: next_page_token
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.voiceListEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "502":
-          description: Bad Gateway
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: List workspace ElevenLabs voices
-      tags:
-      - voices
-  /v1/voices/elevenlabs/library:
-    get:
-      description: Proxies the ElevenLabs shared-voices API using the server's workspace
-        key. Supports the same filters as the ElevenLabs library UI (search, category,
-        gender, age, accent, language, use cases) with page-number pagination.
-      parameters:
-      - description: Free-text search
-        in: query
-        name: search
-        type: string
-      - description: Voice category (professional, famous, high_quality)
-        in: query
-        name: category
-        type: string
-      - description: Voice gender
-        in: query
-        name: gender
-        type: string
-      - description: Voice age band
-        in: query
-        name: age
-        type: string
-      - description: Voice accent
-        in: query
-        name: accent
-        type: string
-      - description: Voice language code
-        in: query
-        name: language
-        type: string
-      - description: Comma-separated use cases
-        in: query
-        name: use_cases
-        type: string
-      - description: Sort order (trending, created_date, cloned_by_count, usage_character_count_1y)
-        in: query
-        name: sort
-        type: string
-      - description: Zero-based page index
-        in: query
-        name: page
-        type: integer
-      - description: Results per page (1-100)
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.voiceListEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "502":
-          description: Bad Gateway
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Browse the ElevenLabs voice library
-      tags:
-      - voices
-  /v1/voices/elevenlabs/library/{public_owner_id}/{voice_id}:
+  /v1/voice/tools/{tool_id}/test:
     post:
       consumes:
       - application/json
-      description: Library voice ids cannot be used for speech until the voice is
-        added to the workspace. This copies the voice and returns the workspace voice
-        id to persist on the agent. Adding a voice that is already present returns
-        the existing voice.
+      description: Sends an api_request tool's HTTP request once, with the arguments
+        supplied, exactly as an agent would mid-conversation, and returns the request
+        sent, the status, the response body and the text the agent would have read
+        as the result. Supply api_request to test an unsaved configuration in place
+        of the stored one. Only api_request tools can be tested. The request really
+        is sent, so a tool that writes data writes it.
       parameters:
-      - description: Library voice owner id
+      - description: Tool id
         in: path
-        name: public_owner_id
+        name: tool_id
         required: true
         type: string
-      - description: Library voice id
-        in: path
-        name: voice_id
-        required: true
-        type: string
-      - description: Name to save the voice under
+      - description: The arguments to call the tool with
         in: body
         name: body
+        required: true
         schema:
-          $ref: '#/definitions/handlers.addLibraryVoiceRequest'
+          $ref: '#/definitions/handlers.toolTestRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.addedVoiceEnvelope'
+            $ref: '#/definitions/handlers.toolTestEnvelope'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/types.ErrorEnvelope'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/models.APIResponse'
-        "502":
-          description: Bad Gateway
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/models.APIResponse'
-        "503":
-          description: Service Unavailable
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/models.APIResponse'
       security:
       - BearerAuth: []
-      summary: Add a library voice to the workspace
+      summary: Test Tool
       tags:
-      - voices
+      - Tools
 schemes:
 - http
 securityDefinitions:

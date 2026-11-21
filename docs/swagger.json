@@ -316,7 +316,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Applies a partial update to an outbound agent owned by the authenticated user. Only the supplied fields are changed; absent fields keep their stored value. Assigning agent.phone_number_id is rejected with 409 when another agent already uses that phone number. Sending knowledge_base.knowledge_base_ids replaces the agent's knowledge base attachments wholesale; omitting it leaves them untouched.",
+                "description": "Applies a partial update to an outbound agent owned by the authenticated user. Only the supplied fields are changed; absent fields keep their stored value. Assigning agent.phone_number_id is rejected with 409 when another agent already uses that phone number. Assigning a number the agent did not already have also sets its status to active, unless agent.status is sent in the same request. Sending knowledge_base.knowledge_base_ids replaces the agent's knowledge base attachments wholesale; omitting it leaves them untouched.",
                 "consumes": [
                     "application/json"
                 ],
@@ -386,219 +386,6 @@
                 }
             }
         },
-        "/v1/api-keys": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns metadata for the authenticated user's active API keys. Secrets are never returned after creation.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "apiKeys"
-                ],
-                "summary": "List API keys",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.apiKeyListEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Creates a new API key for the authenticated user and returns the bearer secret once. Store the key securely; future list responses only include metadata.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "apiKeys"
-                ],
-                "summary": "Create API key",
-                "parameters": [
-                    {
-                        "description": "API key name",
-                        "name": "body",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.createAPIKeyRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.createdAPIKeyEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/api-keys/{api_key_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Deletes an API key owned by the authenticated user. Deleted keys can no longer be used for bearer authentication. A user cannot delete their only remaining active API key.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "apiKeys"
-                ],
-                "summary": "Delete API key",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "API key id",
-                        "name": "api_key_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.revokedAPIKeyEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/api-keys/{api_key_id}/default": {
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Marks an active API key owned by the authenticated user as the default API key. Exactly one active key is default per user.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "apiKeys"
-                ],
-                "summary": "Set default API key",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "API key id",
-                        "name": "api_key_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.defaultAPIKeyEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/v1/calls": {
             "get": {
                 "security": [
@@ -606,7 +393,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of the calls handled for the authenticated API key owner, newest first.",
+                "description": "Returns a paginated list of the calls handled for the authenticated user, newest first.",
                 "produces": [
                     "application/json"
                 ],
@@ -661,7 +448,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Places an outbound WhatsApp call from a connected phone number owned by the authenticated API key owner. The agent that speaks is the one assigned to that phone number; agent_id is optional and only asserts which agent that is. Returns as soon as the callee's phone is ringing — the returned call starts in the \"received\" status and reaches \"answered\" when the callee picks up, or \"declined\" if they cut it while it rings.",
+                "description": "Places an outbound WhatsApp call from a connected phone number owned by the authenticated user. The agent that speaks is the one assigned to that phone number; agent_id is optional and only asserts which agent that is. Returns as soon as the callee's phone is ringing — the returned call starts in the \"received\" status and reaches \"answered\" when the callee picks up, or \"declined\" if they cut it while it rings.",
                 "consumes": [
                     "application/json"
                 ],
@@ -911,507 +698,6 @@
                 }
             }
         },
-        "/v1/knowledge-base": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns a paginated list of the knowledge bases owned by the authenticated API key owner, newest first, each with its indexed sources.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "List Knowledge Bases",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Page number (1-based)",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Items per page (1-100)",
-                        "name": "limit",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseListEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/types.ErrorEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Creates a knowledge base owned by the authenticated API key owner. knowledge_base_name is the only required field; every other field is optional and omitted settings fall back to their defaults. The vector-store namespace_id is assigned automatically and returned with the new knowledge base. Texts supplied in knowledge_base_texts are chunked, embedded and indexed into that namespace as part of the request, so the response carries the knowledge base already at status complete with its sources attached; a knowledge base created without texts starts empty at status in_progress. The create is all-or-nothing — if indexing fails the knowledge base is removed again and the request can be retried unchanged. knowledge_base_urls and knowledge_base_files (file_url) are rejected: urls have no fetcher yet, and documents are uploaded rather than linked, via POST /v1/knowledge-base/{knowledge_base_id}/sources as multipart/form-data.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "Create Knowledge Base",
-                "parameters": [
-                    {
-                        "description": "The knowledge base configuration to create",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.createKnowledgeBaseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/types.ErrorEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/knowledge-base/{knowledge_base_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns a single knowledge base by id, scoped to the authenticated API key owner, including its indexed sources.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "Get Knowledge Base",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base id",
-                        "name": "knowledge_base_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Deletes a knowledge base by id, scoped to the authenticated API key owner, together with its sources and every vector indexed under its namespace. Deleting one that does not exist, or that belongs to somebody else, returns 404.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "Delete Knowledge Base",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base id",
-                        "name": "knowledge_base_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseDeleteEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Applies a partial update to a knowledge base owned by the authenticated API key owner. Only knowledge_base_name and the indexing settings (enable_auto_refresh, max_chunk_size, min_chunk_size) may be changed; at least one must be supplied, and omitted fields keep their stored value. Chunk sizes are validated against each other using the stored values, so min_chunk_size may never end up above max_chunk_size. Changing the chunk sizes does not re-index existing sources.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "Update Knowledge Base",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base id",
-                        "name": "knowledge_base_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Fields to change",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.updateKnowledgeBaseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/types.ErrorEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/knowledge-base/{knowledge_base_id}/sources": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Adds sources to an existing knowledge base owned by the authenticated API key owner and indexes them into its vector-store namespace. Sources arrive one of two ways. A JSON body carries raw texts in knowledge_base_texts. A multipart/form-data body uploads documents in repeated \"files\" parts, optionally named by repeated \"titles\" parts (the nth title belongs to the nth file, and a blank or missing one falls back to the filename); the server extracts the text from each upload — .txt, .md, .csv, .tsv, .json, .yaml, .xml, .log, .rst, .html, .docx and .pdf are read — so nothing is parsed client-side. Either way the resulting text is chunked using the knowledge base's own max_chunk_size and min_chunk_size, embedded, and written under its namespace_id with the source title as the record id; a source that splits into several chunks stores the first under the title and the rest under \"\u003ctitle\u003e#2\", \"\u003ctitle\u003e#3\" and so on. Titles must be printable ASCII, must not contain '#', and must be unique within the knowledge base. Indexing runs synchronously, so the knowledge base is returned already at status complete with the new sources attached. knowledge_base_urls and the JSON knowledge_base_files (file_url) form are still rejected: urls have no fetcher yet, and a file is uploaded rather than linked. The request is all-or-nothing — a failure to index leaves the knowledge base exactly as it was, at status error.",
-                "consumes": [
-                    "application/json",
-                    "multipart/form-data"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "Add Knowledge Base Sources",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base id",
-                        "name": "knowledge_base_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "The raw texts to add (application/json)",
-                        "name": "body",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.addKnowledgeBaseSourcesRequest"
-                        }
-                    },
-                    {
-                        "type": "file",
-                        "description": "Documents to extract and index (multipart/form-data; repeat the field for several files)",
-                        "name": "files",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Optional source titles, one per file in the same order (multipart/form-data)",
-                        "name": "titles",
-                        "in": "formData"
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/types.ErrorEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "413": {
-                        "description": "Request Entity Too Large",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/knowledge-base/{knowledge_base_id}/sources/{source_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Removes a single source from a knowledge base owned by the authenticated API key owner, together with every vector it wrote into the knowledge base's namespace. The knowledge base itself and its other sources are left untouched, and its chunking configuration is not changed. The vectors are removed before the source row, so a failure to reach the vector store leaves the source in place to be retried rather than orphaning chunks that agents would keep retrieving. Deleting a source that does not exist, or one belonging to another knowledge base, returns 404.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Knowledge Base"
-                ],
-                "summary": "Delete Knowledge Base Source",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base id",
-                        "name": "knowledge_base_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Knowledge base source id",
-                        "name": "source_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.knowledgeBaseSourceDeleteEnvelope"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/v1/outbound-campaigns": {
             "get": {
                 "security": [
@@ -1419,7 +705,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a paginated list of the outbound campaigns owned by the authenticated API key owner, newest first, each with its current counters.",
+                "description": "Returns a paginated list of the outbound campaigns owned by the authenticated user, newest first, each with its current counters.",
                 "produces": [
                     "application/json"
                 ],
@@ -1480,7 +766,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates an outbound campaign owned by the authenticated API key owner. campaign_name is the only required field and must be unique among the owner's campaigns. The campaign is created at status draft with every counter at zero; omitting budget_usd leaves it uncapped. agent_id is optional here but required before the campaign can run: it must name one of the owner's agents that already has a phone number assigned, and that agent's number is the one the campaign dials from — a campaign never names a number of its own.",
+                "description": "Creates an outbound campaign owned by the authenticated user. campaign_name is the only required field and must be unique among the owner's campaigns. The campaign is created at status draft with every counter at zero; omitting budget_usd leaves it uncapped. agent_id is optional here but required before the campaign can run: it must name one of the owner's agents that already has a phone number assigned, and that agent's number is the one the campaign dials from — a campaign never names a number of its own.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1543,7 +829,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a single outbound campaign by id, scoped to the authenticated API key owner, with its counters and the pickup_rate and success_rate derived from them.",
+                "description": "Returns a single outbound campaign by id, scoped to the authenticated user, with its counters and the pickup_rate and success_rate derived from them.",
                 "produces": [
                     "application/json"
                 ],
@@ -1599,7 +885,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes a campaign by id, scoped to the authenticated API key owner. A running campaign is refused with 409; pause it first. Calls the campaign already placed are not deleted.",
+                "description": "Deletes a campaign by id, scoped to the authenticated user. A running campaign is refused with 409; pause it first. Calls the campaign already placed are not deleted.",
                 "produces": [
                     "application/json"
                 ],
@@ -1661,7 +947,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Applies a partial update to a campaign owned by the authenticated API key owner. Only campaign_name, status, budget_usd and agent_id may be changed; at least one field must be supplied and omitted fields keep their stored value. Send budget_usd null to remove a spend cap, or agent_id null to detach the agent. agent_id must name one of the owner's agents that has a phone number assigned; the campaign dials from that agent's number, which is why the number itself is read-only. Legal status moves are draft/paused to running, running to paused or completed, and any live status to failed; completed and failed are terminal. A campaign cannot be running without an agent, so starting one without an agent, or detaching the agent of a running one, is refused with 409.",
+                "description": "Applies a partial update to a campaign owned by the authenticated user. Only campaign_name, status, budget_usd and agent_id may be changed; at least one field must be supplied and omitted fields keep their stored value. Send budget_usd null to remove a spend cap, or agent_id null to detach the agent. agent_id must name one of the owner's agents that has a phone number assigned; the campaign dials from that agent's number, which is why the number itself is read-only. Legal status moves are draft/paused to running, running to paused or completed, and any live status to failed; completed and failed are terminal. A campaign cannot be running without an agent, so starting one without an agent, or detaching the agent of a running one, is refused with 409.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1858,7 +1144,539 @@
                 }
             }
         },
-        "/v1/phone-number": {
+        "/v1/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the application user for the authenticated Clerk session, including the internal user id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get current user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.userEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/voice/knowledge-base": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of the knowledge bases owned by the authenticated user, newest first, each with its indexed sources.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "List Knowledge Bases",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (1-100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseListEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/types.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a knowledge base owned by the authenticated user. knowledge_base_name is the only required field; every other field is optional and omitted settings fall back to their defaults. The vector-store namespace_id is assigned automatically and returned with the new knowledge base. Texts supplied in knowledge_base_texts are chunked, embedded and indexed into that namespace as part of the request, so the response carries the knowledge base already at status complete with its sources attached; a knowledge base created without texts starts empty at status in_progress. The create is all-or-nothing — if indexing fails the knowledge base is removed again and the request can be retried unchanged. knowledge_base_urls and knowledge_base_files (file_url) are rejected: urls have no fetcher yet, and documents are uploaded rather than linked, via POST /v1/voice/knowledge-base/{knowledge_base_id}/sources as multipart/form-data.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "Create Knowledge Base",
+                "parameters": [
+                    {
+                        "description": "The knowledge base configuration to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.createKnowledgeBaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/types.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/voice/knowledge-base/{knowledge_base_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a single knowledge base by id, scoped to the authenticated user, including its indexed sources.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "Get Knowledge Base",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base id",
+                        "name": "knowledge_base_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a knowledge base by id, scoped to the authenticated user, together with its sources and every vector indexed under its namespace. Deleting one that does not exist, or that belongs to somebody else, returns 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "Delete Knowledge Base",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base id",
+                        "name": "knowledge_base_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseDeleteEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Applies a partial update to a knowledge base owned by the authenticated user. Only knowledge_base_name and the indexing settings (enable_auto_refresh, max_chunk_size, min_chunk_size) may be changed; at least one must be supplied, and omitted fields keep their stored value. Chunk sizes are validated against each other using the stored values, so min_chunk_size may never end up above max_chunk_size. Changing the chunk sizes does not re-index existing sources.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "Update Knowledge Base",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base id",
+                        "name": "knowledge_base_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.updateKnowledgeBaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/types.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/voice/knowledge-base/{knowledge_base_id}/sources": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds sources to an existing knowledge base owned by the authenticated user and indexes them into its vector-store namespace. Sources arrive one of two ways. A JSON body carries raw texts in knowledge_base_texts. A multipart/form-data body uploads documents in repeated \"files\" parts, optionally named by repeated \"titles\" parts (the nth title belongs to the nth file, and a blank or missing one falls back to the filename); the server extracts the text from each upload — .txt, .md, .csv, .tsv, .json, .yaml, .xml, .log, .rst, .html, .docx and .pdf are read — so nothing is parsed client-side. Either way the resulting text is chunked using the knowledge base's own max_chunk_size and min_chunk_size, embedded, and written under its namespace_id with the source title as the record id; a source that splits into several chunks stores the first under the title and the rest under \"\u003ctitle\u003e#2\", \"\u003ctitle\u003e#3\" and so on. Titles must be printable ASCII, must not contain '#', and must be unique within the knowledge base. Indexing runs synchronously, so the knowledge base is returned already at status complete with the new sources attached. knowledge_base_urls and the JSON knowledge_base_files (file_url) form are still rejected: urls have no fetcher yet, and a file is uploaded rather than linked. The request is all-or-nothing — a failure to index leaves the knowledge base exactly as it was, at status error.",
+                "consumes": [
+                    "application/json",
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "Add Knowledge Base Sources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base id",
+                        "name": "knowledge_base_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The raw texts to add (application/json)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.addKnowledgeBaseSourcesRequest"
+                        }
+                    },
+                    {
+                        "type": "file",
+                        "description": "Documents to extract and index (multipart/form-data; repeat the field for several files)",
+                        "name": "files",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional source titles, one per file in the same order (multipart/form-data)",
+                        "name": "titles",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/types.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/voice/knowledge-base/{knowledge_base_id}/sources/{source_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes a single source from a knowledge base owned by the authenticated user, together with every vector it wrote into the knowledge base's namespace. The knowledge base itself and its other sources are left untouched, and its chunking configuration is not changed. The vectors are removed before the source row, so a failure to reach the vector store leaves the source in place to be retried rather than orphaning chunks that agents would keep retrieving. Deleting a source that does not exist, or one belonging to another knowledge base, returns 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Knowledge Base"
+                ],
+                "summary": "Delete Knowledge Base Source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Knowledge base id",
+                        "name": "knowledge_base_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Knowledge base source id",
+                        "name": "source_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.knowledgeBaseSourceDeleteEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/voice/phone-number": {
             "get": {
                 "security": [
                     {
@@ -1895,14 +1713,14 @@
                 }
             }
         },
-        "/v1/phone-number/login": {
+        "/v1/voice/phone-number/login": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts a WhatsApp Linked Devices QR login session. Pass phone_number_id to restart a non-connected login; add force_repair to replace a connected companion without deleting its row. Pass agent_id to assign the linked number to that agent as soon as the scan connects it.",
+                "description": "Starts a WhatsApp Linked Devices QR login session. Pass phone_number_id to restart a non-connected login; add force_repair to replace a connected companion without deleting its row. Pass agent_id to assign the linked number to that agent as soon as the scan connects it. Pass pairing_method phone_code with phone_number to get an 8-character pairing_code to type into WhatsApp instead of scanning.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1957,7 +1775,7 @@
                 }
             }
         },
-        "/v1/phone-number/logout": {
+        "/v1/voice/phone-number/logout": {
             "post": {
                 "security": [
                     {
@@ -2020,7 +1838,7 @@
                 }
             }
         },
-        "/v1/phone-number/{phone_number_id}": {
+        "/v1/voice/phone-number/{phone_number_id}": {
             "get": {
                 "security": [
                     {
@@ -2078,7 +1896,7 @@
                 }
             }
         },
-        "/v1/tools": {
+        "/v1/voice/tools": {
             "get": {
                 "security": [
                     {
@@ -2202,7 +2020,7 @@
                 }
             }
         },
-        "/v1/tools/{tool_id}": {
+        "/v1/voice/tools/{tool_id}": {
             "get": {
                 "security": [
                     {
@@ -2378,225 +2196,14 @@
                 }
             }
         },
-        "/v1/users/me": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns the application user for the authenticated Clerk session, including the internal user id.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "users"
-                ],
-                "summary": "Get current user",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.userEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/voices/elevenlabs": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Proxies the ElevenLabs voices API using the server's workspace key. These voices are usable for calls immediately, unlike library voices. Pagination uses the opaque next_page_token returned by ElevenLabs.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "voices"
-                ],
-                "summary": "List workspace ElevenLabs voices",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Free-text search",
-                        "name": "search",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice category (premade, cloned, generated, professional)",
-                        "name": "category",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice type filter",
-                        "name": "voice_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Results per page (1-100)",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Pagination token from a previous response",
-                        "name": "next_page_token",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.voiceListEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/voices/elevenlabs/library": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Proxies the ElevenLabs shared-voices API using the server's workspace key. Supports the same filters as the ElevenLabs library UI (search, category, gender, age, accent, language, use cases) with page-number pagination.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "voices"
-                ],
-                "summary": "Browse the ElevenLabs voice library",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Free-text search",
-                        "name": "search",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice category (professional, famous, high_quality)",
-                        "name": "category",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice gender",
-                        "name": "gender",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice age band",
-                        "name": "age",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice accent",
-                        "name": "accent",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Voice language code",
-                        "name": "language",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Comma-separated use cases",
-                        "name": "use_cases",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Sort order (trending, created_date, cloned_by_count, usage_character_count_1y)",
-                        "name": "sort",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Zero-based page index",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Results per page (1-100)",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.voiceListEnvelope"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/voices/elevenlabs/library/{public_owner_id}/{voice_id}": {
+        "/v1/voice/tools/{tool_id}/test": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Library voice ids cannot be used for speech until the voice is added to the workspace. This copies the voice and returns the workspace voice id to persist on the agent. Adding a voice that is already present returns the existing voice.",
+                "description": "Sends an api_request tool's HTTP request once, with the arguments supplied, exactly as an agent would mid-conversation, and returns the request sent, the status, the response body and the text the agent would have read as the result. Supply api_request to test an unsaved configuration in place of the stored one. Only api_request tools can be tested. The request really is sent, so a tool that writes data writes it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2604,30 +2211,24 @@
                     "application/json"
                 ],
                 "tags": [
-                    "voices"
+                    "Tools"
                 ],
-                "summary": "Add a library voice to the workspace",
+                "summary": "Test Tool",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Library voice owner id",
-                        "name": "public_owner_id",
+                        "description": "Tool id",
+                        "name": "tool_id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "type": "string",
-                        "description": "Library voice id",
-                        "name": "voice_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Name to save the voice under",
+                        "description": "The arguments to call the tool with",
                         "name": "body",
                         "in": "body",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.addLibraryVoiceRequest"
+                            "$ref": "#/definitions/handlers.toolTestRequest"
                         }
                     }
                 ],
@@ -2635,13 +2236,13 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.addedVoiceEnvelope"
+                            "$ref": "#/definitions/handlers.toolTestEnvelope"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/types.ErrorEnvelope"
                         }
                     },
                     "401": {
@@ -2650,14 +2251,14 @@
                             "$ref": "#/definitions/models.APIResponse"
                         }
                     },
-                    "502": {
-                        "description": "Bad Gateway",
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/models.APIResponse"
                         }
                     },
-                    "503": {
-                        "description": "Service Unavailable",
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/models.APIResponse"
                         }
@@ -2692,14 +2293,60 @@
                 }
             }
         },
-        "constants.CallDirection": {
-            "type": "string",
-            "enum": [
-                "outbound"
-            ],
-            "x-enum-varnames": [
-                "CallDirectionDefault"
-            ]
+        "agenttools.TestRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "method": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "agenttools.TestResult": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "content_type": {
+                    "type": "string"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "error": {
+                    "description": "Error explains a request that never got a status: an argument missing, a\ntimeout, a refused address.",
+                    "type": "string"
+                },
+                "model_result": {
+                    "description": "ModelResult is the tool result an agent would read for this response.",
+                    "type": "string"
+                },
+                "ok": {
+                    "description": "OK is true when the endpoint answered with a 2xx or 3xx status.",
+                    "type": "boolean"
+                },
+                "request": {
+                    "$ref": "#/definitions/agenttools.TestRequest"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
         },
         "handlers.addKnowledgeBaseSourcesRequest": {
             "type": "object",
@@ -2721,59 +2368,6 @@
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "handlers.addLibraryVoiceRequest": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "Brian"
-                }
-            }
-        },
-        "handlers.addedVoiceData": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "Brian"
-                },
-                "voice_id": {
-                    "type": "string",
-                    "example": "nPczCjzI2devNBz1zQrb"
-                }
-            }
-        },
-        "handlers.addedVoiceEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/handlers.addedVoiceData"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.apiKeyListEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.APIKey"
-                    }
-                },
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
                 }
             }
         },
@@ -2879,15 +2473,6 @@
                 }
             }
         },
-        "handlers.createAPIKeyRequest": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "Production"
-                }
-            }
-        },
         "handlers.createCallRequest": {
             "type": "object",
             "properties": {
@@ -2949,34 +2534,6 @@
                 },
                 "campaign_name": {
                     "type": "string"
-                }
-            }
-        },
-        "handlers.createdAPIKeyEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/models.CreatedAPIKey"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.defaultAPIKeyEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/models.APIKey"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
                 }
             }
         },
@@ -3118,6 +2675,15 @@
                 "label": {
                     "type": "string",
                     "example": "Main support line"
+                },
+                "pairing_method": {
+                    "description": "PairingMethod is \"qr\" (the default: scan a QR code) or \"phone_code\": link\nby typing an 8-character code into WhatsApp, for a user who cannot scan\nbecause the dashboard is open on the phone itself. phone_code needs\nphone_number and starts a new login, so it takes no phone_number_id.",
+                    "type": "string",
+                    "enum": [
+                        "qr",
+                        "phone_code"
+                    ],
+                    "example": "qr"
                 },
                 "phone_number": {
                     "type": "string",
@@ -3281,33 +2847,6 @@
                 }
             }
         },
-        "handlers.revokedAPIKeyData": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "8c3f910d-4f81-4e8e-a4e0-54a9c9d0e55f"
-                },
-                "revoked": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "handlers.revokedAPIKeyEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/handlers.revokedAPIKeyData"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
         "handlers.toolDeleteData": {
             "type": "object",
             "properties": {
@@ -3407,6 +2946,32 @@
                 }
             }
         },
+        "handlers.toolTestEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/agenttools.TestResult"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.toolTestRequest": {
+            "type": "object",
+            "properties": {
+                "api_request": {
+                    "$ref": "#/definitions/models.ToolAPIRequestConfig"
+                },
+                "arguments": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
         "handlers.updateCallRequest": {
             "type": "object",
             "properties": {
@@ -3449,143 +3014,6 @@
                 },
                 "success": {
                     "type": "boolean"
-                }
-            }
-        },
-        "handlers.voiceListData": {
-            "type": "object",
-            "properties": {
-                "has_more": {
-                    "type": "boolean"
-                },
-                "next_page": {
-                    "type": "integer"
-                },
-                "next_page_token": {
-                    "type": "string"
-                },
-                "total_count": {
-                    "type": "integer"
-                },
-                "voices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.voiceSummary"
-                    }
-                }
-            }
-        },
-        "handlers.voiceListEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/handlers.voiceListData"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.voiceSummary": {
-            "type": "object",
-            "properties": {
-                "accent": {
-                    "type": "string"
-                },
-                "added": {
-                    "type": "boolean"
-                },
-                "age": {
-                    "type": "string"
-                },
-                "category": {
-                    "type": "string"
-                },
-                "cloned_by_count": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "descriptive": {
-                    "type": "string"
-                },
-                "featured": {
-                    "type": "boolean"
-                },
-                "gender": {
-                    "type": "string"
-                },
-                "image_url": {
-                    "type": "string"
-                },
-                "language": {
-                    "type": "string"
-                },
-                "languages": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owned": {
-                    "description": "Owned voices live in the workspace and can be saved on an agent as-is;\nlibrary voices must be added first (see AddLibraryVoice).",
-                    "type": "boolean"
-                },
-                "preview_url": {
-                    "type": "string"
-                },
-                "public_owner_id": {
-                    "type": "string"
-                },
-                "use_case": {
-                    "type": "string"
-                },
-                "voice_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.APIKey": {
-            "type": "object",
-            "properties": {
-                "createdAt": {
-                    "type": "string",
-                    "example": "2026-07-02T10:00:00Z"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "8c3f910d-4f81-4e8e-a4e0-54a9c9d0e55f"
-                },
-                "isDefault": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "keyPrefix": {
-                    "type": "string",
-                    "example": "wcai_Bv6f"
-                },
-                "last4": {
-                    "type": "string",
-                    "example": "9xQ2"
-                },
-                "lastUsedAt": {
-                    "type": "string",
-                    "example": "2026-07-02T10:00:00Z"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Production"
-                },
-                "updatedAt": {
-                    "type": "string",
-                    "example": "2026-07-02T10:00:00Z"
                 }
             }
         },
@@ -3847,47 +3275,6 @@
                 }
             }
         },
-        "models.CreatedAPIKey": {
-            "type": "object",
-            "properties": {
-                "createdAt": {
-                    "type": "string",
-                    "example": "2026-07-02T10:00:00Z"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "8c3f910d-4f81-4e8e-a4e0-54a9c9d0e55f"
-                },
-                "isDefault": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "key": {
-                    "type": "string",
-                    "example": "wcai_Bv6fLwL8y6bpiGvM_rJX8oBsZw8QSg6DSxQ7VhA_9xQ2"
-                },
-                "keyPrefix": {
-                    "type": "string",
-                    "example": "wcai_Bv6f"
-                },
-                "last4": {
-                    "type": "string",
-                    "example": "9xQ2"
-                },
-                "lastUsedAt": {
-                    "type": "string",
-                    "example": "2026-07-02T10:00:00Z"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Production"
-                },
-                "updatedAt": {
-                    "type": "string",
-                    "example": "2026-07-02T10:00:00Z"
-                }
-            }
-        },
         "models.KnowledgeBase": {
             "type": "object",
             "properties": {
@@ -4065,12 +3452,27 @@
                     "type": "string",
                     "example": "2026-07-03T10:00:00Z"
                 },
+                "pairing_code": {
+                    "description": "PairingCode is the 8-character code a user types into WhatsApp (Linked\ndevices › Link with phone number instead) when they cannot scan the QR\ncode, such as when the dashboard is open on the phone itself. It is only\nset on an unscanned login that asked for one, and is never stored.",
+                    "type": "string",
+                    "example": "ABCD-EFGH"
+                },
+                "pairing_expires_in_ms": {
+                    "description": "PairingExpiresInMs is how long pairing_code can still be typed in, counted\nfrom when this response was built. The code lives as long as the login's\nsocket, which WhatsApp closes about 160s after the login started. Only set\nalongside pairing_code.",
+                    "type": "integer",
+                    "example": 140000
+                },
                 "phone_number": {
                     "type": "string",
                     "example": "+15551234567"
                 },
                 "qr_code": {
                     "type": "string"
+                },
+                "qr_expires_in_ms": {
+                    "description": "QRExpiresInMs is how long the QR code in qr_code stays scannable, counted\nfrom when this response was built: WhatsApp gives the first code 60s and\neach later one 20s. A duration rather than a timestamp, so the page's\ncountdown is right even when the browser's clock is not. Only set on an\nunscanned login.",
+                    "type": "integer",
+                    "example": 17000
                 },
                 "status": {
                     "type": "string",
@@ -4090,7 +3492,7 @@
             "type": "object",
             "properties": {
                 "agent_ids": {
-                    "description": "AgentIDs and ChatAgentIDs are the agents this tool is attached to, empty\nwhile it is attached to none. A tool is shared: the same definition can be\nattached to any number of agents of either kind. Read-only here: a tool is\nattached by writing that agent's tools.tool_ids, so the fact has one write\npath rather than two that can disagree. They are returned so a client can\nsee where a tool is in use before it changes or deletes one.",
+                    "description": "AgentIDs are the agents this tool is attached to, empty while it is\nattached to none. A tool is shared: the same definition can be attached\nto any number of agents. Read-only here: a tool is attached by writing\nthat agent's tools.tool_ids, so the fact has one write path rather than\ntwo that can disagree. They are returned so a client can see where a tool\nis in use before it changes or deletes one.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4098,12 +3500,6 @@
                 },
                 "api_request": {
                     "$ref": "#/definitions/models.ToolAPIRequestConfig"
-                },
-                "chat_agent_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "created_at": {
                     "type": "string",
@@ -4241,6 +3637,10 @@
         "models.User": {
             "type": "object",
             "properties": {
+                "blockedAt": {
+                    "description": "BlockedAt is set when an operator has blocked the account; auth then\nrefuses every request it makes (see middleware.Auth).",
+                    "type": "string"
+                },
                 "createdAt": {
                     "type": "string",
                     "example": "2026-06-30T10:00:00Z"
@@ -4282,9 +3682,6 @@
                 "knowledge_base": {
                     "$ref": "#/definitions/types.KnowledgeBaseSection"
                 },
-                "model": {
-                    "$ref": "#/definitions/types.ModelSection"
-                },
                 "post_call": {
                     "$ref": "#/definitions/types.PostCallSection"
                 },
@@ -4293,9 +3690,6 @@
                 },
                 "tools": {
                     "$ref": "#/definitions/types.ToolsSection"
-                },
-                "transcriber": {
-                    "$ref": "#/definitions/types.TranscriberSection"
                 },
                 "updated_at": {
                     "type": "string"
@@ -4308,9 +3702,6 @@
         "types.AgentSection": {
             "type": "object",
             "properties": {
-                "call_direction": {
-                    "$ref": "#/definitions/constants.CallDirection"
-                },
                 "language": {
                     "type": "string"
                 },
@@ -4337,9 +3728,6 @@
                 "knowledge_base": {
                     "$ref": "#/definitions/types.KnowledgeBaseSection"
                 },
-                "model": {
-                    "$ref": "#/definitions/types.ModelSection"
-                },
                 "post_call": {
                     "$ref": "#/definitions/types.PostCallSection"
                 },
@@ -4349,25 +3737,8 @@
                 "tools": {
                     "$ref": "#/definitions/types.ToolsSection"
                 },
-                "transcriber": {
-                    "$ref": "#/definitions/types.TranscriberSection"
-                },
                 "voice": {
                     "$ref": "#/definitions/types.VoiceSection"
-                }
-            }
-        },
-        "types.ElevenLabsVoice": {
-            "type": "object",
-            "properties": {
-                "voice_id": {
-                    "type": "string"
-                },
-                "voice_model": {
-                    "type": "string"
-                },
-                "voice_name": {
-                    "type": "string"
                 }
             }
         },
@@ -4438,26 +3809,9 @@
                 }
             }
         },
-        "types.ModelSection": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "temperature": {
-                    "type": "number"
-                }
-            }
-        },
         "types.OpenAIVoice": {
             "type": "object",
             "properties": {
-                "instructions": {
-                    "type": "string"
-                },
                 "realtime_model": {
                     "type": "string"
                 },
@@ -4465,9 +3819,6 @@
                     "type": "number"
                 },
                 "voice_id": {
-                    "type": "string"
-                },
-                "voice_model": {
                     "type": "string"
                 },
                 "voice_name": {
@@ -4556,50 +3907,11 @@
                 }
             }
         },
-        "types.TranscriberElevenLabs": {
-            "type": "object",
-            "properties": {
-                "model": {
-                    "type": "string"
-                }
-            }
-        },
-        "types.TranscriberOpenAI": {
-            "type": "object",
-            "properties": {
-                "model": {
-                    "type": "string"
-                }
-            }
-        },
-        "types.TranscriberSection": {
-            "type": "object",
-            "properties": {
-                "elevenlabs": {
-                    "$ref": "#/definitions/types.TranscriberElevenLabs"
-                },
-                "language": {
-                    "type": "string"
-                },
-                "openai": {
-                    "$ref": "#/definitions/types.TranscriberOpenAI"
-                },
-                "provider": {
-                    "type": "string"
-                }
-            }
-        },
         "types.VoiceSection": {
             "type": "object",
             "properties": {
-                "elevenlabs": {
-                    "$ref": "#/definitions/types.ElevenLabsVoice"
-                },
                 "openai": {
                     "$ref": "#/definitions/types.OpenAIVoice"
-                },
-                "provider": {
-                    "type": "string"
                 }
             }
         }

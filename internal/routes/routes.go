@@ -6,10 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"whatsapp-ai-caller-server/internal/agents"
-	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/calls"
-	"whatsapp-ai-caller-server/internal/chatagents"
-	"whatsapp-ai-caller-server/internal/chatconversations"
 	"whatsapp-ai-caller-server/internal/handlers"
 	"whatsapp-ai-caller-server/internal/knowledgebases"
 	appmiddleware "whatsapp-ai-caller-server/internal/middleware"
@@ -25,9 +22,6 @@ import (
 type Dependencies struct {
 	UsersRepo                 *users.Repository
 	AgentsRepo                *agents.Repository
-	ChatAgentsRepo            *chatagents.Repository
-	ChatConversationsRepo     *chatconversations.Repository
-	APIKeysRepo               *apikeys.Repository
 	PhoneNumbersRepo          *phonenumbers.Repository
 	CallsRepo                 *calls.Repository
 	KnowledgeBasesRepo        *knowledgebases.Repository
@@ -36,7 +30,6 @@ type Dependencies struct {
 	ToolsRepo                 *tools.Repository
 	WhatsAppLoginManager      *whatsapplogin.Manager
 	ClerkWebhookSigningSecret string
-	ElevenLabsAPIKey          string
 	CORSAllowedOrigins        []string
 	// VerboseLogs adds a log line for every request. Off, the log carries only
 	// user activity (see the activity package).
@@ -53,20 +46,11 @@ func NewRouter(deps Dependencies) http.Handler {
 		inboundRefresher = deps.WhatsAppLoginManager
 	}
 	agentController := agents.NewController(agents.NewService(deps.AgentsRepo, inboundRefresher, deps.KnowledgeBaseIndexer))
-	// A nil manager must stay a nil interface, not a typed nil the handler calls.
-	var chatRuntime handlers.ChatRuntimeReporter
-	if deps.WhatsAppLoginManager != nil {
-		chatRuntime = deps.WhatsAppLoginManager
-	}
-	chatAgentHandler := handlers.NewChatAgentHandler(deps.ChatAgentsRepo, deps.KnowledgeBaseIndexer, chatRuntime)
-	chatConversationHandler := handlers.NewChatConversationHandler(deps.ChatConversationsRepo, deps.WhatsAppLoginManager)
 	userHandler := handlers.NewUserHandler()
-	apiKeyHandler := handlers.NewAPIKeyHandler(deps.APIKeysRepo)
 	phoneNumberHandler := handlers.NewPhoneNumberHandler(
 		deps.PhoneNumbersRepo,
 		deps.WhatsAppLoginManager,
 	)
-	voiceHandler := handlers.NewVoiceHandler(deps.ElevenLabsAPIKey)
 	callHandler := handlers.NewCallHandler(
 		deps.CallsRepo,
 		deps.PhoneNumbersRepo,
@@ -80,7 +64,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		deps.WhatsAppLoginManager,
 	)
 	toolHandler := handlers.NewToolHandler(deps.ToolsRepo)
-	authMW := appmiddleware.NewAuth(deps.UsersRepo, deps.APIKeysRepo)
+	authMW := appmiddleware.NewAuth(deps.UsersRepo)
 
 	// Built-in chi middleware.
 	r.Use(chimiddleware.RequestID)
@@ -104,8 +88,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	// Clerk webhooks are public but verified by Svix signatures in the handler.
 	r.Post("/api/webhooks/clerk", webhookHandler.Clerk)
 
-	// Account API. RequireUser accepts Clerk bearer tokens or generated API keys
-	// and stores the resolved application user in the request context; handlers
+	// Account API. RequireUser accepts Clerk session tokens and stores the resolved application user in the request context; handlers
 	// read it via middleware.UserFromContext instead of trusting request
 	// parameters.
 	r.Group(func(r chi.Router) {
@@ -114,83 +97,55 @@ func NewRouter(deps Dependencies) http.Handler {
 		// Users.
 		r.Get("/v1/users/me", userHandler.Me)
 
-		// API keys. Keys are scoped to the authenticated user.
-		r.Get("/v1/api-keys", apiKeyHandler.List)
-		r.Post("/v1/api-keys", apiKeyHandler.Create)
-		r.Patch("/v1/api-keys/{api_key_id}/default", apiKeyHandler.SetDefault)
-		r.Delete("/v1/api-keys/{api_key_id}", apiKeyHandler.Revoke)
+		// Voice WhatsApp numbers: QR / pairing-code login through whatsmeow,
+		// stored in voice_phone_numbers. Everything voice lives under /voice/ so
+		// it never collides with whiskey's chat routes (/v1/phone-number,
+		// /v1/tools, /v1/knowledge-base), which serve chat's own tables. Login
+		// sessions remain scoped to the authenticated user; paired clients are
+		// adopted by the call runtime.
+		r.Get("/v1/voice/phone-number", phoneNumberHandler.List)
+		r.Post("/v1/voice/phone-number/login", phoneNumberHandler.Login)
+		r.Get("/v1/voice/phone-number/{phone_number_id}", phoneNumberHandler.Get)
+		r.Post("/v1/voice/phone-number/logout", phoneNumberHandler.Logout)
 
-		// WhatsApp phone number QR login. Login sessions remain scoped to the
-		// authenticated user; paired clients are adopted by the call runtime.
-		r.Get("/v1/phone-number", phoneNumberHandler.List)
-		r.Post("/v1/phone-number/login", phoneNumberHandler.Login)
-		r.Get("/v1/phone-number/{phone_number_id}", phoneNumberHandler.Get)
-		r.Post("/v1/phone-number/logout", phoneNumberHandler.Logout)
-
-		// ElevenLabs voice catalogue for the agent voice picker. The workspace
-		// API key stays server-side; these endpoints only return voice metadata.
-		r.Get("/v1/voices/elevenlabs", voiceHandler.Workspace)
-		r.Get("/v1/voices/elevenlabs/library", voiceHandler.Library)
-		r.Post("/v1/voices/elevenlabs/library/{public_owner_id}/{voice_id}", voiceHandler.AddLibraryVoice)
-
-		// Dashboard agent access uses the logged-in user. Public live API
-		// routes below remain API-key-only for external callers.
+		// Dashboard agent access uses the logged-in user.
 		r.Post("/v1/dashboard/agents", agentController.Create)
 		r.Get("/v1/dashboard/agents", agentController.List)
 		r.Get("/v1/dashboard/agents/{agent_id}", agentController.Get)
 		r.Patch("/v1/dashboard/agents/{agent_id}", agentController.Update)
 		r.Delete("/v1/dashboard/agents/{agent_id}", agentController.Delete)
 
-		// Dashboard chat agents use the Clerk-authenticated account and control
-		// the behaviour of incoming WhatsApp text messages in real time.
-		r.Post("/v1/dashboard/chat-agents", chatAgentHandler.Create)
-		r.Get("/v1/dashboard/chat-agents", chatAgentHandler.List)
-		r.Get("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Get)
-		r.Patch("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Update)
-		r.Delete("/v1/dashboard/chat-agents/{chat_agent_id}", chatAgentHandler.Delete)
-
-		// The saved WhatsApp threads those agents answered. They are written by
-		// the message runtime as it replies, so the API only reads a thread,
-		// closes it, or deletes it. The per-agent route is what the dashboard's
-		// Conversation tab lists.
-		r.Get("/v1/dashboard/chat-agents/{chat_agent_id}/conversations", chatConversationHandler.ListByChatAgent)
-		r.Get("/v1/dashboard/chat-conversations", chatConversationHandler.List)
-		r.Get("/v1/dashboard/chat-conversations/{conversation_id}", chatConversationHandler.Get)
-		r.Patch("/v1/dashboard/chat-conversations/{conversation_id}", chatConversationHandler.Update)
-		r.Post("/v1/dashboard/chat-conversations/{conversation_id}/messages", chatConversationHandler.SendMessage)
-		r.Delete("/v1/dashboard/chat-conversations/{conversation_id}", chatConversationHandler.Delete)
-
 		// Dashboard call history uses the logged-in user. These share the same
-		// handlers as the API-key /v1/calls routes below; the auth middleware
-		// supplies the resolved user either way. Create places an outbound call;
+		// handlers as the /v1/calls routes below. Create places an outbound call;
 		// inbound calls arrive through the voice-call runtime instead.
 		r.Post("/v1/dashboard/calls", callHandler.Create)
 		r.Get("/v1/dashboard/calls", callHandler.List)
 		r.Get("/v1/dashboard/calls/{call_id}", callHandler.Get)
 		r.Patch("/v1/dashboard/calls/{call_id}", callHandler.Update)
+		r.Post("/v1/dashboard/calls/{call_id}/hangup", callHandler.Hangup)
 		r.Delete("/v1/dashboard/calls/{call_id}", callHandler.Delete)
 
-		// Dashboard knowledge bases, sharing the handlers with the API-key
-		// /v1/knowledge-base routes below.
-		r.Post("/v1/dashboard/knowledge-base", knowledgeBaseHandler.Create)
-		r.Get("/v1/dashboard/knowledge-base", knowledgeBaseHandler.List)
-		r.Get("/v1/dashboard/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Get)
-		r.Patch("/v1/dashboard/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Update)
-		r.Delete("/v1/dashboard/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Delete)
-		r.Post("/v1/dashboard/knowledge-base/{knowledge_base_id}/sources", knowledgeBaseHandler.AddSources)
-		r.Delete("/v1/dashboard/knowledge-base/{knowledge_base_id}/sources/{source_id}", knowledgeBaseHandler.DeleteSource)
+		// Dashboard knowledge bases, sharing the handlers with the
+		// /v1/voice/knowledge-base routes below.
+		r.Post("/v1/dashboard/voice/knowledge-base", knowledgeBaseHandler.Create)
+		r.Get("/v1/dashboard/voice/knowledge-base", knowledgeBaseHandler.List)
+		r.Get("/v1/dashboard/voice/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Get)
+		r.Patch("/v1/dashboard/voice/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Update)
+		r.Delete("/v1/dashboard/voice/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Delete)
+		r.Post("/v1/dashboard/voice/knowledge-base/{knowledge_base_id}/sources", knowledgeBaseHandler.AddSources)
+		r.Delete("/v1/dashboard/voice/knowledge-base/{knowledge_base_id}/sources/{source_id}", knowledgeBaseHandler.DeleteSource)
 
-		// Dashboard tools, sharing the handlers with the API-key /v1/tools routes
+		// Dashboard tools, sharing the handlers with the /v1/voice/tools routes
 		// below. A tool defines an action; it is offered on a call only once an
 		// agent attaches it through tools.tool_ids.
-		r.Post("/v1/dashboard/tools", toolHandler.Create)
-		r.Get("/v1/dashboard/tools", toolHandler.List)
-		r.Get("/v1/dashboard/tools/{tool_id}", toolHandler.Get)
-		r.Patch("/v1/dashboard/tools/{tool_id}", toolHandler.Update)
-		r.Delete("/v1/dashboard/tools/{tool_id}", toolHandler.Delete)
-		r.Post("/v1/dashboard/tools/{tool_id}/test", toolHandler.Test)
+		r.Post("/v1/dashboard/voice/tools", toolHandler.Create)
+		r.Get("/v1/dashboard/voice/tools", toolHandler.List)
+		r.Get("/v1/dashboard/voice/tools/{tool_id}", toolHandler.Get)
+		r.Patch("/v1/dashboard/voice/tools/{tool_id}", toolHandler.Update)
+		r.Delete("/v1/dashboard/voice/tools/{tool_id}", toolHandler.Delete)
+		r.Post("/v1/dashboard/voice/tools/{tool_id}/test", toolHandler.Test)
 
-		// Dashboard outbound campaigns, sharing the handlers with the API-key
+		// Dashboard outbound campaigns, sharing the handlers with the
 		// /v1/outbound-campaigns routes below.
 		r.Post("/v1/dashboard/outbound-campaigns", outboundCampaignHandler.Create)
 		r.Get("/v1/dashboard/outbound-campaigns", outboundCampaignHandler.List)
@@ -210,34 +165,19 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Delete("/v1/dashboard/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Delete)
 	})
 
-	// Agent API. These live API routes only accept generated API keys; Clerk
-	// session tokens are not valid here.
+	// Agent API: the same handlers under their plain /v1 paths. API keys were
+	// removed, so these take the signed-in Clerk session like the dashboard routes.
 	r.Group(func(r chi.Router) {
-		r.Use(authMW.RequireAPIKeyUser)
+		r.Use(authMW.RequireUser)
 
-		// Agents. Every operation is scoped to the authenticated API key owner.
+		// Agents. Every operation is scoped to the authenticated user.
 		r.Post("/v1/agents", agentController.Create)
 		r.Get("/v1/agents", agentController.List)
 		r.Get("/v1/agents/{agent_id}", agentController.Get)
 		r.Patch("/v1/agents/{agent_id}", agentController.Update)
 		r.Delete("/v1/agents/{agent_id}", agentController.Delete)
 
-		// API-key chat-agent CRUD mirrors the dashboard routes above.
-		r.Post("/v1/chat-agents", chatAgentHandler.Create)
-		r.Get("/v1/chat-agents", chatAgentHandler.List)
-		r.Get("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Get)
-		r.Patch("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Update)
-		r.Delete("/v1/chat-agents/{chat_agent_id}", chatAgentHandler.Delete)
-
-		// API-key chat-conversation reads mirror the dashboard routes above.
-		r.Get("/v1/chat-agents/{chat_agent_id}/conversations", chatConversationHandler.ListByChatAgent)
-		r.Get("/v1/chat-conversations", chatConversationHandler.List)
-		r.Get("/v1/chat-conversations/{conversation_id}", chatConversationHandler.Get)
-		r.Patch("/v1/chat-conversations/{conversation_id}", chatConversationHandler.Update)
-		r.Post("/v1/chat-conversations/{conversation_id}/messages", chatConversationHandler.SendMessage)
-		r.Delete("/v1/chat-conversations/{conversation_id}", chatConversationHandler.Delete)
-
-		// Calls. Placing and managing the calls handled for the API key owner.
+		// Calls. Placing and managing the calls handled for the authenticated user.
 		// POST places an outbound call; inbound calls are recorded by the
 		// voice-call runtime as they arrive.
 		r.Post("/v1/calls", callHandler.Create)
@@ -249,24 +189,24 @@ func NewRouter(deps Dependencies) http.Handler {
 		// Knowledge bases. Add Sources indexes raw texts into the knowledge base's
 		// vector namespace and Delete Source removes one again, vectors included;
 		// url and file sources arrive with their own fetchers.
-		r.Post("/v1/knowledge-base", knowledgeBaseHandler.Create)
-		r.Get("/v1/knowledge-base", knowledgeBaseHandler.List)
-		r.Get("/v1/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Get)
-		r.Patch("/v1/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Update)
-		r.Delete("/v1/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Delete)
-		r.Post("/v1/knowledge-base/{knowledge_base_id}/sources", knowledgeBaseHandler.AddSources)
-		r.Delete("/v1/knowledge-base/{knowledge_base_id}/sources/{source_id}", knowledgeBaseHandler.DeleteSource)
+		r.Post("/v1/voice/knowledge-base", knowledgeBaseHandler.Create)
+		r.Get("/v1/voice/knowledge-base", knowledgeBaseHandler.List)
+		r.Get("/v1/voice/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Get)
+		r.Patch("/v1/voice/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Update)
+		r.Delete("/v1/voice/knowledge-base/{knowledge_base_id}", knowledgeBaseHandler.Delete)
+		r.Post("/v1/voice/knowledge-base/{knowledge_base_id}/sources", knowledgeBaseHandler.AddSources)
+		r.Delete("/v1/voice/knowledge-base/{knowledge_base_id}/sources/{source_id}", knowledgeBaseHandler.DeleteSource)
 
 		// Tools. The actions an agent can take mid-call: hit an HTTP endpoint,
 		// hand the caller over, send a WhatsApp message, hang up. Every operation
-		// is scoped to the authenticated API key owner, and a tool stays inert
+		// is scoped to the authenticated user, and a tool stays inert
 		// until an agent attaches it through tools.tool_ids.
-		r.Post("/v1/tools", toolHandler.Create)
-		r.Get("/v1/tools", toolHandler.List)
-		r.Get("/v1/tools/{tool_id}", toolHandler.Get)
-		r.Patch("/v1/tools/{tool_id}", toolHandler.Update)
-		r.Delete("/v1/tools/{tool_id}", toolHandler.Delete)
-		r.Post("/v1/tools/{tool_id}/test", toolHandler.Test)
+		r.Post("/v1/voice/tools", toolHandler.Create)
+		r.Get("/v1/voice/tools", toolHandler.List)
+		r.Get("/v1/voice/tools/{tool_id}", toolHandler.Get)
+		r.Patch("/v1/voice/tools/{tool_id}", toolHandler.Update)
+		r.Delete("/v1/voice/tools/{tool_id}", toolHandler.Delete)
+		r.Post("/v1/voice/tools/{tool_id}/test", toolHandler.Test)
 
 		// Outbound campaigns. Every operation is scoped to the authenticated API
 		// key owner. A campaign records the batch and its counters, and adding a

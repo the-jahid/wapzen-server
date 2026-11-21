@@ -28,10 +28,10 @@ func TestListLinksMatchesDocumentedExample(t *testing.T) {
 }
 
 func TestListLinksCarriesFields(t *testing.T) {
-	fields := []string{"id", "agent.status", "agent.language", "agent.call_direction"}
+	fields := []string{"id", "agent.status", "agent.language", "agent.name"}
 	links := ListLinks(agentsPath, 1, 20, 42, fields)
 
-	wantSelf := "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.call_direction"
+	wantSelf := "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.name"
 	if links.Self != wantSelf {
 		t.Errorf("self = %q, want %q", links.Self, wantSelf)
 	}
@@ -41,7 +41,7 @@ func TestListLinksCarriesFields(t *testing.T) {
 	if links.Next == nil {
 		t.Fatal("next = nil, want a link on a non-final page")
 	}
-	wantNext := "/v1/agents?page=2&limit=20&fields=id,agent.status,agent.language,agent.call_direction"
+	wantNext := "/v1/agents?page=2&limit=20&fields=id,agent.status,agent.language,agent.name"
 	if *links.Next != wantNext {
 		t.Errorf("next = %q, want %q", *links.Next, wantNext)
 	}

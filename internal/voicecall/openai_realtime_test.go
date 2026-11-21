@@ -26,7 +26,7 @@ func TestOpenAIRealtimeWebSocketURLAddsModel(t *testing.T) {
 }
 
 func TestOpenAIRealtimeSessionUsesLowLatencyAudioSettings(t *testing.T) {
-	payload := openAIRealtimeSessionUpdate(openAIStandardConfig{
+	payload := openAIRealtimeSessionUpdate(openAIRealtimeConfig{
 		RealtimeModel:     "gpt-realtime-2.1-mini",
 		Instructions:      "Be concise.",
 		Voice:             "nova", // TTS-only voice must be remapped.
@@ -34,13 +34,20 @@ func TestOpenAIRealtimeSessionUsesLowLatencyAudioSettings(t *testing.T) {
 		RealtimeSilenceMS: 250,
 		RealtimePrefixMS:  120,
 		RealtimeThreshold: 0.5,
+		MaxOutputTokens:   defaultOpenAIMaxOutputTokens,
+		NoiseReduction:    "near_field",
 	})
 	session := payload["session"].(map[string]any)
-	if session["model"] != "gpt-realtime-2.1-mini" || session["max_output_tokens"] != 256 {
+	// The old cap of 256 cut replies off mid-sentence; the cap is now a safety
+	// net only.
+	if session["model"] != "gpt-realtime-2.1-mini" || session["max_output_tokens"] != 4096 {
 		t.Fatalf("session = %#v", session)
 	}
 	audio := session["audio"].(map[string]any)
 	input := audio["input"].(map[string]any)
+	if nr, _ := input["noise_reduction"].(map[string]any); nr["type"] != "near_field" {
+		t.Fatalf("noise_reduction = %#v", input["noise_reduction"])
+	}
 	format := input["format"].(map[string]any)
 	if format["rate"] != openAIRealtimeSampleRate {
 		t.Fatalf("input rate = %#v", format["rate"])
@@ -61,7 +68,7 @@ func TestOpenAIRealtimeSessionUsesLowLatencyAudioSettings(t *testing.T) {
 }
 
 func TestOpenAIRealtimeSessionDeclaresKnowledgeTool(t *testing.T) {
-	payload := openAIRealtimeSessionUpdate(openAIStandardConfig{
+	payload := openAIRealtimeSessionUpdate(openAIRealtimeConfig{
 		RealtimeModel: "gpt-realtime-2.1-mini",
 		Instructions:  "Be concise.",
 		Tools:         newKnowledgeToolbox(&fakeRetriever{enabled: true}, testKnowledgeBases(), "call-1"),
@@ -135,7 +142,7 @@ func TestOpenAIRealtimeBridgeStreamsCallAudioBothWays(t *testing.T) {
 	defer server.Close()
 
 	played := make(chan struct{}, 1)
-	cfg := openAIStandardConfig{
+	cfg := openAIRealtimeConfig{
 		APIKey:            "test-key",
 		RealtimeURL:       "ws" + strings.TrimPrefix(server.URL, "http"),
 		RealtimeModel:     "gpt-realtime-2.1-mini",
@@ -180,17 +187,19 @@ func TestOpenAIRealtimeBridgeStreamsCallAudioBothWays(t *testing.T) {
 	}
 }
 
-func TestOpenAIRealtimeIsTheDefaultOpenAIMode(t *testing.T) {
+func TestOpenAIRealtimeDefaults(t *testing.T) {
 	t.Setenv("OPENAI_REALTIME_ENABLED", "")
+	t.Setenv("OPENAI_VOICE_ENABLED", "")
 	t.Setenv("OPENAI_REALTIME_MODEL", "")
-	cfg := loadOpenAIStandardConfig()
-	if !cfg.RealtimeEnabled || cfg.RealtimeModel != defaultOpenAIRealtimeModel {
-		t.Fatalf("Realtime defaults: enabled=%t model=%q", cfg.RealtimeEnabled, cfg.RealtimeModel)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	cfg := loadOpenAIRealtimeConfig()
+	if !cfg.Enabled() || cfg.RealtimeModel != defaultOpenAIRealtimeModel {
+		t.Fatalf("Realtime defaults: enabled=%t model=%q", cfg.Enabled(), cfg.RealtimeModel)
 	}
 }
 
 func TestOpenAIRealtimeSessionPinsTranscriptionLanguage(t *testing.T) {
-	payload := openAIRealtimeSessionUpdate(openAIStandardConfig{
+	payload := openAIRealtimeSessionUpdate(openAIRealtimeConfig{
 		RealtimeModel:      "gpt-realtime-2.1-mini",
 		TranscriptionModel: "gpt-4o-mini-transcribe",
 		Language:           "bn-BD",
@@ -202,7 +211,7 @@ func TestOpenAIRealtimeSessionPinsTranscriptionLanguage(t *testing.T) {
 	}
 
 	// An agent with no language selected must not pin one.
-	payload = openAIRealtimeSessionUpdate(openAIStandardConfig{RealtimeModel: "gpt-realtime-2.1-mini"})
+	payload = openAIRealtimeSessionUpdate(openAIRealtimeConfig{RealtimeModel: "gpt-realtime-2.1-mini"})
 	session = payload["session"].(map[string]any)
 	transcription = session["audio"].(map[string]any)["input"].(map[string]any)["transcription"].(map[string]any)
 	if _, present := transcription["language"]; present {
@@ -216,7 +225,7 @@ func TestOpenAIRealtimeSessionPinsTranscriptionLanguage(t *testing.T) {
 func TestOpenAIRealtimeGreetingKeepsAgentInstructions(t *testing.T) {
 	const prompt = "Language: You must speak and understand only Bengali (bn-BD)."
 
-	generated := openAIRealtimeGreetingInstruction(openAIStandardConfig{
+	generated := openAIRealtimeGreetingInstruction(openAIRealtimeConfig{
 		Instructions:     prompt,
 		BeginMessageMode: "agent_speaks_first_with_model_generated_message",
 	})
@@ -224,7 +233,7 @@ func TestOpenAIRealtimeGreetingKeepsAgentInstructions(t *testing.T) {
 		t.Errorf("model-generated greeting = %q", generated)
 	}
 
-	verbatim := openAIRealtimeGreetingInstruction(openAIStandardConfig{
+	verbatim := openAIRealtimeGreetingInstruction(openAIRealtimeConfig{
 		Instructions:     prompt,
 		BeginMessageMode: "agent_speaks_first",
 		WelcomeMessage:   "Assalamu alaikum",
@@ -234,7 +243,7 @@ func TestOpenAIRealtimeGreetingKeepsAgentInstructions(t *testing.T) {
 	}
 
 	// An agent that waits for the caller still opens with nothing.
-	if got := openAIRealtimeGreetingInstruction(openAIStandardConfig{
+	if got := openAIRealtimeGreetingInstruction(openAIRealtimeConfig{
 		Instructions:     prompt,
 		BeginMessageMode: "agent_waits_for_user",
 	}); got != "" {

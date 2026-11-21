@@ -105,14 +105,7 @@ func insertColumns(userID string, req types.CreateAgentRequest) columnSet {
 	addNonZero(&s, "language", agent.Language)
 	addNonNil(&s, "timezone", agent.Timezone)
 	addNonNil(&s, "phone_number_id", normalizePhoneNumberID(agent.PhoneNumberID))
-	addNonZero(&s, "call_direction", agent.CallDirection)
 	addNonZero(&s, "status", agent.Status)
-
-	if m := req.Model; m != nil {
-		addNonZero(&s, "model_provider", m.Provider)
-		addNonZero(&s, "model_name", m.Name)
-		addNonZero(&s, "model_temperature", m.Temperature)
-	}
 
 	if p := req.Prompt; p != nil {
 		addNonZero(&s, "prompt_begin_message_mode", p.BeginMessageMode)
@@ -122,31 +115,12 @@ func insertColumns(userID string, req types.CreateAgentRequest) columnSet {
 	}
 
 	if v := req.Voice; v != nil {
-		addNonZero(&s, "voice_provider", v.Provider)
-		if el := v.ElevenLabs; el != nil {
-			addNonZero(&s, "voice_elevenlabs_voice_id", el.VoiceID)
-			addNonZero(&s, "voice_elevenlabs_voice_name", el.VoiceName)
-			addNonZero(&s, "voice_elevenlabs_voice_model", el.VoiceModel)
-		}
 		if oa := v.OpenAI; oa != nil {
 			addNonZero(&s, "voice_openai_voice_id", oa.VoiceID)
 			addNonZero(&s, "voice_openai_voice_name", oa.VoiceName)
-			addNonZero(&s, "voice_openai_voice_model", oa.VoiceModel)
 			addNonZero(&s, "voice_openai_realtime_model", oa.RealtimeModel)
-			addNonNil(&s, "voice_openai_instructions", oa.Instructions)
 			addNonZero(&s, "voice_openai_speed", oa.Speed)
 			addNonZero(&s, "voice_openai_volume", oa.Volume)
-		}
-	}
-
-	if t := req.Transcriber; t != nil {
-		addNonZero(&s, "transcriber_provider", t.Provider)
-		addNonZero(&s, "transcriber_language", t.Language)
-		if t.OpenAI != nil {
-			addNonZero(&s, "transcriber_openai_model", t.OpenAI.Model)
-		}
-		if t.ElevenLabs != nil {
-			addNonZero(&s, "transcriber_elevenlabs_model", t.ElevenLabs.Model)
 		}
 	}
 

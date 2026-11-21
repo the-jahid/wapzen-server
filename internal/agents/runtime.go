@@ -16,15 +16,12 @@ import (
 // InboundAgent is the minimal agent configuration needed to answer a call: the
 // prompt fields that shape the AI's behaviour — the General Prompt
 // (SystemPrompt) — the welcome-message settings that control how the call opens,
-// and the transcriber/voice settings that control how the call sounds. It is
+// and the Realtime voice settings that control how the call sounds. It is
 // populated only for an agent that is live and handles the call's direction.
 type InboundAgent struct {
-	ID               string
-	ModelProvider    string
-	ModelName        string
-	ModelTemperature float64
-	SystemPrompt     string
-	Language         string
+	ID           string
+	SystemPrompt string
+	Language     string
 	// Timezone is the IANA zone the agent's conversations are dated in, or ""
 	// to take it from the country of the number it answers on.
 	Timezone string
@@ -38,19 +35,9 @@ type InboundAgent struct {
 	WelcomeMessage   string
 	WelcomeDelayMs   int
 
-	// The provider-specific model is passed to the matching live-call backend.
-	TranscriberProvider        string
-	TranscriberOpenAIModel     string
-	TranscriberElevenLabsModel string
-
-	// VoiceProvider selects the live backend and its voice settings.
-	VoiceProvider            string
-	VoiceElevenLabsVoiceID   string
-	VoiceElevenLabsModel     string
+	// The OpenAI Realtime voice and model the call runs on.
 	VoiceOpenAIVoiceID       string
-	VoiceOpenAIVoiceModel    string
 	VoiceOpenAIRealtimeModel string
-	VoiceOpenAIInstructions  string
 
 	// VoiceOpenAISpeed is the spoken rate (1 = normal) and VoiceOpenAIVolume the
 	// playback gain (1 = unchanged) for the call.
@@ -58,68 +45,46 @@ type InboundAgent struct {
 	VoiceOpenAIVolume float64
 }
 
-// LiveInboundAgentForPhoneNumber returns the active, inbound-capable agent
-// assigned to phoneNumberID, or (nil, nil) when none exists — no agent is
-// assigned, the assigned agent is paused (status != active), or it only handles
-// outbound calls.
-func (r *Repository) LiveInboundAgentForPhoneNumber(ctx context.Context, phoneNumberID string) (*InboundAgent, error) {
-	return r.liveAgentForPhoneNumber(ctx, phoneNumberID, "inbound")
-}
-
-// LiveOutboundAgentForPhoneNumber is the outbound twin of
-// LiveInboundAgentForPhoneNumber. It backs the Create Call endpoint, which
-// derives the answering agent from the number the call is placed from.
-func (r *Repository) LiveOutboundAgentForPhoneNumber(ctx context.Context, phoneNumberID string) (*InboundAgent, error) {
-	return r.liveAgentForPhoneNumber(ctx, phoneNumberID, "outbound")
-}
-
-// liveAgentForPhoneNumber loads the live agent assigned to phoneNumberID that
-// handles calls in direction ("inbound" or "outbound"). An agent set to "both"
-// matches either direction. A phone number can be assigned to at most one agent,
-// so the direction filter only ever excludes that one agent.
-func (r *Repository) liveAgentForPhoneNumber(ctx context.Context, phoneNumberID, direction string) (*InboundAgent, error) {
+// LiveAgentForPhoneNumber returns the active agent assigned to phoneNumberID,
+// or (nil, nil) when none exists — no agent is assigned, or the assigned agent
+// is paused (status != active). Every agent both answers calls to its number
+// and places calls from it, so the same agent serves either direction.
+func (r *Repository) LiveAgentForPhoneNumber(ctx context.Context, phoneNumberID string) (*InboundAgent, error) {
 	const q = `
-		SELECT id, model_provider, model_name, model_temperature,
+		SELECT id,
 			prompt_system_prompt, language, timezone,
 			prompt_begin_message_mode, prompt_begin_message, prompt_begin_message_delay_ms,
-			transcriber_provider, transcriber_openai_model, transcriber_elevenlabs_model,
-			voice_provider, voice_elevenlabs_voice_id, voice_elevenlabs_voice_model,
-			voice_openai_voice_id, voice_openai_voice_model, voice_openai_realtime_model, voice_openai_instructions,
+			voice_openai_voice_id, voice_openai_realtime_model,
 			voice_openai_speed, voice_openai_volume
 		FROM agents
 		WHERE phone_number_id = $1
 			AND status = 'active'
-			AND call_direction IN ($2, 'both')
 			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = agents.user_id AND u.blocked_at IS NOT NULL)
 		LIMIT 1`
 
 	var (
-		agent               InboundAgent
-		systemPrompt        *string
-		welcomeMessage      *string
-		welcomeDelayMs      *int
-		voiceOpenAIInstruct *string
-		timezone            *string
+		agent          InboundAgent
+		systemPrompt   *string
+		welcomeMessage *string
+		welcomeDelayMs *int
+		timezone       *string
 	)
-	err := r.pool.QueryRow(ctx, q, phoneNumberID, direction).Scan(
-		&agent.ID, &agent.ModelProvider, &agent.ModelName, &agent.ModelTemperature,
+	err := r.pool.QueryRow(ctx, q, phoneNumberID).Scan(
+		&agent.ID,
 		&systemPrompt, &agent.Language, &timezone,
 		&agent.BeginMessageMode, &welcomeMessage, &welcomeDelayMs,
-		&agent.TranscriberProvider, &agent.TranscriberOpenAIModel, &agent.TranscriberElevenLabsModel,
-		&agent.VoiceProvider, &agent.VoiceElevenLabsVoiceID, &agent.VoiceElevenLabsModel,
-		&agent.VoiceOpenAIVoiceID, &agent.VoiceOpenAIVoiceModel, &agent.VoiceOpenAIRealtimeModel, &voiceOpenAIInstruct,
+		&agent.VoiceOpenAIVoiceID, &agent.VoiceOpenAIRealtimeModel,
 		&agent.VoiceOpenAISpeed, &agent.VoiceOpenAIVolume,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("select live %s agent: %w", direction, err)
+		return nil, fmt.Errorf("select live agent: %w", err)
 	}
 	agent.SystemPrompt = deref(systemPrompt)
 	agent.WelcomeMessage = deref(welcomeMessage)
 	agent.WelcomeDelayMs = deref(welcomeDelayMs)
-	agent.VoiceOpenAIInstructions = deref(voiceOpenAIInstruct)
 	agent.Timezone = deref(timezone)
 	return &agent, nil
 }

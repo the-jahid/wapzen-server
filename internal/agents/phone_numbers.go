@@ -24,7 +24,7 @@ func resolvePhoneNumberAssignment(ctx context.Context, tx pgx.Tx, userID, agentI
 	// every other agent referencing it is owned by the same user).
 	var lockedID string
 	err := tx.QueryRow(ctx,
-		`SELECT id FROM phone_numbers WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+		`SELECT id FROM voice_phone_numbers WHERE id = $1 AND user_id = $2 FOR UPDATE`,
 		*phoneNumberID, userID,
 	).Scan(&lockedID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -105,12 +105,36 @@ func (r *Repository) AssignPhoneNumberIfUnassigned(ctx context.Context, userID, 
 
 	// The scan also takes the agent live: a number connected for an agent is
 	// meant to be answered on, so there is no separate activation step.
+	//
+	// "Unassigned" also covers the agent holding an older row of the SAME
+	// WhatsApp account (same phone number, or same wa_jid user). Scanning that
+	// account again writes a new row and the old one is deleted soon after,
+	// which clears the agent's number through the foreign key. Refusing here
+	// left the agent with no number and the new row unused (2026-11-21). A
+	// different number the owner picked by hand still wins.
 	const q = `
 		UPDATE agents
 		SET phone_number_id = $1, status = 'active', updated_at = now()
 		WHERE id = $2
 			AND user_id = $3
-			AND (phone_number_id IS NULL OR btrim(phone_number_id) = '')`
+			AND (
+				phone_number_id IS NULL
+				OR btrim(phone_number_id) = ''
+				OR phone_number_id IN (
+					SELECT old.id
+					FROM voice_phone_numbers old
+					JOIN voice_phone_numbers fresh ON fresh.id = $1
+					WHERE old.id <> fresh.id
+						AND old.user_id = $3
+						AND (
+							(btrim(coalesce(fresh.phone_number, '')) <> ''
+								AND old.phone_number = fresh.phone_number)
+							OR (btrim(coalesce(fresh.wa_jid, '')) <> ''
+								AND split_part(split_part(old.wa_jid, '@', 1), ':', 1)
+									= split_part(split_part(fresh.wa_jid, '@', 1), ':', 1))
+						)
+				)
+			)`
 	tag, err := tx.Exec(ctx, q, phoneNumberID, agentID, userID)
 	if err != nil {
 		return false, fmt.Errorf("assign phone number: %w", err)

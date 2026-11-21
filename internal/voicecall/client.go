@@ -1,8 +1,6 @@
 // Package voicecall runs WhatsApp voice calls in both directions — answering
-// incoming ones and placing outbound ones — using the provider selected on each
-// local agent. OpenAI Realtime uses one native speech-to-speech session,
-// standard OpenAI uses transcription + text model + speech requests, and
-// ElevenLabs uses Scribe + the selected text model + streaming TTS.
+// incoming ones and placing outbound ones — on one OpenAI Realtime
+// speech-to-speech session per call.
 package voicecall
 
 import (
@@ -14,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/purpshell/meowcaller"
@@ -36,6 +35,16 @@ const callRecordTimeout = 5 * time.Second
 // inbound media never arrives with silence. This is the compromise.
 const outboundMediaGrace = 1500 * time.Millisecond
 
+// defaultAnswerWaitMS is how long an inbound call may keep ringing while its
+// Realtime session connects. Past it the call is answered anyway; the caller's
+// first words are buffered until the session is up.
+const defaultAnswerWaitMS = 4000
+
+// defaultInlineKnowledgeMaxChars is the largest knowledge base put straight
+// into a call's instructions (roughly two to four thousand tokens). A typical
+// small-business menu, price list or FAQ fits; anything larger is searched.
+const defaultInlineKnowledgeMaxChars = 8000
+
 // CallStore persists the lifecycle of the calls this client handles, in either
 // direction. It is injected via UseCallStore; when absent, inbound calls are
 // handled exactly as before but not recorded (outbound calls require it, see
@@ -53,22 +62,13 @@ type CallStore interface {
 	SaveTranscript(ctx context.Context, id string, messages []models.CallMessage) (int, error)
 }
 
-// transcriptRecorder is implemented by every voice bridge to expose the full
-// user/assistant conversation of the call once it ends, so handleCall can
-// persist it. Kept separate from meowcaller.AudioSink so a bridge that records
-// no transcript simply does not implement it.
-type transcriptRecorder interface {
-	Transcript() []conversationMessage
-}
-
-// Client answers incoming WhatsApp voice calls with the configured live voice
-// provider. New() reads credentials once; Attach wires the handler onto each
-// per-number whatsmeow client the login Manager creates.
+// Client answers incoming WhatsApp voice calls with OpenAI Realtime. New()
+// reads credentials once; Attach wires the handler onto each per-number
+// whatsmeow client the login Manager creates.
 type Client struct {
-	openAI     openAIStandardConfig
-	elevenLabs elevenLabsConfig
-	diag       *callerdiag.Recorder
-	recordDir  string
+	openAI    openAIRealtimeConfig
+	diag      *callerdiag.Recorder
+	recordDir string
 
 	// store persists answered calls in the calls table. Nil disables persistence
 	// (see UseCallStore); a nil store makes every call-record method a no-op.
@@ -79,12 +79,71 @@ type Client struct {
 	// prompt alone, which is exactly how calls behaved before retrieval existed.
 	retriever KnowledgeRetriever
 
+	// inlineKnowledgeMaxChars is the largest knowledge base (all of an agent's
+	// sources together, in characters) put straight into the call's
+	// instructions instead of behind the lookup tool. 0 always uses the tool.
+	inlineKnowledgeMaxChars int
+
+	// answerWait bounds how long an inbound call keeps ringing while its
+	// Realtime session connects (~1–1.8 s measured), so the caller is picked up
+	// by an agent that can already hear and speak rather than into silence.
+	answerWait time.Duration
+
+	watchdog watchdogConfig
+
 	// active tracks the call IDs currently being answered. WhatsApp re-delivers
 	// an <offer> for the same call, and meowcaller fires OnIncomingCall for each
 	// one; without this a repeat offer would start a second realtime session on
 	// the same call, and the caller would hear every reply twice.
 	activeMu sync.Mutex
 	active   map[string]bool
+
+	// live maps a recorded call's calls-table row id to the call on the wire, so
+	// the dashboard can hang up a call it is following by the id it was handed.
+	// Guarded by activeMu.
+	live map[string]liveCall
+}
+
+// liveCall is one call HangupCall can reach: the call itself and the slot its
+// OnEnd reads the end reason from when the wire gives none.
+type liveCall struct {
+	call   *meowcaller.Call
+	reason *atomic.Value
+}
+
+// ErrCallNotLive is returned by HangupCall for a call this process is not
+// running: it already ended, or it was never placed here.
+var ErrCallNotLive = errors.New("call is not in progress")
+
+// HangupCall ends the live call recorded under rowID (ringing or answered),
+// recording reason as why it ended. The call's own OnEnd then writes its final
+// status, exactly as when the other side hangs up.
+func (c *Client) HangupCall(rowID, reason string) error {
+	if c == nil {
+		return ErrCallNotLive
+	}
+	c.activeMu.Lock()
+	entry, ok := c.live[rowID]
+	c.activeMu.Unlock()
+	if !ok {
+		return ErrCallNotLive
+	}
+	if strings.TrimSpace(reason) != "" {
+		entry.reason.Store(reason)
+	}
+	return entry.call.Hangup()
+}
+
+func (c *Client) trackLive(rowID string, entry liveCall) {
+	c.activeMu.Lock()
+	c.live[rowID] = entry
+	c.activeMu.Unlock()
+}
+
+func (c *Client) forgetLive(rowID string) {
+	c.activeMu.Lock()
+	delete(c.live, rowID)
+	c.activeMu.Unlock()
 }
 
 // CallAgent is the per-call configuration resolved at answer time for one
@@ -110,24 +169,18 @@ type CallAgent struct {
 	CampaignID string
 	LeadID     string
 
-	// Provider selects the live conversation backend: "openai_realtime",
-	// "openai", or "11labs". Empty retains the standard OpenAI behavior.
-	Provider string
-
-	// These select the application's dynamic text model for ElevenLabs and the
-	// standard OpenAI fallback. Native OpenAI Realtime calls use the agent's
-	// RealtimeModel selection, falling back to server configuration when empty.
-	LLMProvider    string
-	LLMModel       string
-	LLMTemperature float64
-
-	// Instructions is the agent's prompt passed to the selected text model.
+	// Instructions is the agent's prompt for the Realtime session.
 	Instructions string
 
 	// KnowledgeBases are the knowledge bases attached to the agent, resolved to
 	// the vector-store namespaces the call retrieves from. Empty means the agent
 	// answers from its prompt alone and no lookup tool is offered to the model.
 	KnowledgeBases []models.AgentKnowledgeBase
+
+	// KnowledgeDocuments is the agent's whole knowledge base when it is small
+	// enough to go straight into the instructions (see InlineKnowledgeLimit).
+	// When set, it replaces the lookup tool and KnowledgeBases is ignored.
+	KnowledgeDocuments []models.KnowledgeDocument
 
 	// Tools are the actions attached to the agent, offered to the model as
 	// callable functions for the length of the call. Empty means the agent can
@@ -154,21 +207,11 @@ type CallAgent struct {
 	// the realtime session is ready. 0 means no delay.
 	WelcomeDelayMs int
 
-	// TranscribeModel is the standard OpenAI Audio transcription model.
-	TranscribeModel string
-
-	// Voice and OpenAIVoiceModel select standard OpenAI Audio Speech output.
-	Voice             string
-	OpenAIVoiceModel  string
-	RealtimeModel     string
-	VoiceInstructions string
-
-	// ElevenLabsVoiceID and ElevenLabsModel select the realtime TTS endpoint
-	// dynamically when Provider is "11labs".
-	ElevenLabsVoiceID         string
-	ElevenLabsModel           string
-	ElevenLabsTranscribeModel string
-	Language                  string
+	// Voice and RealtimeModel select the Realtime voice and model; empty falls
+	// back to the server configuration. Language pins the caller transcription.
+	Voice         string
+	RealtimeModel string
+	Language      string
 
 	// Speed is the spoken rate (1 = normal, 0.25–1.5). Volume is a gain applied
 	// to the audio played into the call (1 = unchanged). Zero means "not set" for
@@ -179,22 +222,23 @@ type CallAgent struct {
 }
 
 // New builds a voice-call client from the environment, or returns nil when
-// neither the standard OpenAI nor ElevenLabs pipeline has credentials.
+// OpenAI Realtime has no credentials (or is switched off).
 // A nil *Client is inert: the Manager simply never attaches a call handler, and
 // every method below is safe to call on it.
 func New() *Client {
-	openAI := loadOpenAIStandardConfig()
-	openAIEnabled := openAI.Enabled()
-	elevenLabs := loadElevenLabsConfig()
-	if !openAIEnabled && !elevenLabs.Enabled() {
+	openAI := loadOpenAIRealtimeConfig()
+	if !openAI.Enabled() {
 		return nil
 	}
 
 	c := &Client{
-		openAI:     openAI,
-		elevenLabs: elevenLabs,
-		recordDir:  strings.TrimSpace(os.Getenv("VOICECALL_RECORD_DIR")),
-		active:     make(map[string]bool),
+		openAI:                  openAI,
+		recordDir:               strings.TrimSpace(os.Getenv("VOICECALL_RECORD_DIR")),
+		active:                  make(map[string]bool),
+		live:                    make(map[string]liveCall),
+		inlineKnowledgeMaxChars: envInt("VOICE_KB_INLINE_MAX_CHARS", defaultInlineKnowledgeMaxChars),
+		answerWait:              time.Duration(envInt("VOICE_ANSWER_WAIT_MS", defaultAnswerWaitMS)) * time.Millisecond,
+		watchdog:                loadWatchdogConfig(),
 	}
 
 	// MEOWCALLER_DIAG_DIR turns on the signalling/audio recorder shared by every
@@ -210,15 +254,7 @@ func New() *Client {
 		}
 	}
 
-	if openAIEnabled {
-		log.Printf("voicecall: standard OpenAI voice pipeline configured transcriber=%s tts=%s voice=%s", c.openAI.TranscriptionModel, c.openAI.TTSModel, c.openAI.Voice)
-		if c.openAI.RealtimeEnabled {
-			log.Printf("voicecall: low-latency OpenAI Realtime pipeline configured model=%s voice=%s", c.openAI.RealtimeModel, normalizeOpenAIRealtimeVoice(c.openAI.Voice))
-		}
-	}
-	if elevenLabs.Enabled() {
-		log.Println("voicecall: ElevenLabs dynamic realtime configured (Scribe + local LLM + TTS; no ElevenLabs Agent ID)")
-	}
+	log.Printf("voicecall: OpenAI Realtime configured model=%s voice=%s", c.openAI.RealtimeModel, c.openAI.Voice)
 	return c
 }
 
@@ -243,48 +279,21 @@ func (c *Client) UseKnowledgeRetriever(retriever KnowledgeRetriever) {
 	c.retriever = retriever
 }
 
+// InlineKnowledgeLimit is the largest knowledge base, in characters across all
+// of an agent's sources, that a call puts straight into its instructions
+// instead of searching. 0 (or a nil client) means always search.
+func (c *Client) InlineKnowledgeLimit() int {
+	if c == nil || c.inlineKnowledgeMaxChars < 0 {
+		return 0
+	}
+	return c.inlineKnowledgeMaxChars
+}
+
 // CanRetrieveKnowledge reports whether in-call knowledge base retrieval is
 // configured, so the call-resolution path can skip loading an agent's
 // attachments on a server that could not query them anyway.
 func (c *Client) CanRetrieveKnowledge() bool {
 	return c != nil && c.retriever != nil && c.retriever.Enabled()
-}
-
-// CanHandleLLM reports whether the selected text-model provider is configured.
-func (c *Client) CanHandleLLM(provider string) bool {
-	return c != nil && c.openAI.LLM.Enabled(provider)
-}
-
-// CanHandleProvider reports whether the credentials and feature flag required
-// by provider are available. It lets routing fail closed before a WhatsApp call
-// is answered into silence.
-func (c *Client) CanHandleProvider(provider string) bool {
-	if c == nil {
-		return false
-	}
-	switch normalizeProvider(provider) {
-	case "11labs":
-		return c.elevenLabs.Enabled()
-	case "openai_realtime":
-		return c.openAI.Enabled() && c.openAI.RealtimeEnabled
-	case "openai":
-		return c.openAI.Enabled()
-	default:
-		return false
-	}
-}
-
-func normalizeProvider(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "11labs", "elevenlabs", "eleven_labs":
-		return "11labs"
-	case "openai_realtime", "openai-realtime", "realtime":
-		return "openai_realtime"
-	case "", "openai":
-		return "openai"
-	default:
-		return strings.ToLower(strings.TrimSpace(provider))
-	}
 }
 
 // Attach registers the incoming-call handler on a per-number whatsmeow client
@@ -368,12 +377,6 @@ func (c *Client) PlaceCall(ctx context.Context, caller *meowcaller.Client, targe
 	}
 	if c.store == nil {
 		return "", errors.New("call persistence is not configured")
-	}
-	// Check the provider before dialing: an unconfigured one would answer the
-	// callee into silence, and hanging up on someone who just picked up is worse
-	// than never ringing them.
-	if provider := normalizeProvider(agent.Provider); !c.CanHandleProvider(provider) {
-		return "", fmt.Errorf("voice provider %q is not configured", provider)
 	}
 
 	log.Printf("voicecall: placing outbound call to %s for agent %s", target, agent.AgentID)
@@ -582,21 +585,10 @@ func (c *Client) handleCall(call *meowcaller.Call, agent *CallAgent) {
 // so its record advances to "answered" when media first flows.
 //
 // It returns an error only for a failure that means no conversation will happen:
-// a provider that is not configured, or an answer the server refused. Both are
-// logged and recorded before returning. Everything past that point is reported
-// through the call's own lifecycle callbacks.
+// an answer the server refused. It is logged and recorded before returning.
+// Everything past that point is reported through the call's own lifecycle
+// callbacks.
 func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRecord, callType string) error {
-	provider := "openai"
-	if agent != nil {
-		provider = normalizeProvider(agent.Provider)
-	}
-	if !c.CanHandleProvider(provider) {
-		log.Printf("voicecall: call %s cannot use provider=%s because it is not configured", call.ID(), provider)
-		record.failed("provider not configured: " + provider)
-		c.releaseCall(call.ID())
-		return fmt.Errorf("voice provider %q is not configured", provider)
-	}
-
 	// Per-call config starts from environment defaults, then applies the assigned
 	// agent's overrides without mutating the shared client configuration.
 	openAICfg := c.openAI
@@ -624,9 +616,18 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 	// down this function.
 	controls := &liveCallControls{call: call}
 	var toolbox *combinedToolbox
+	inlineKnowledge := ""
 	if agent != nil {
 		controls.useSender(agent.SendMessage)
-		knowledge := newKnowledgeToolbox(c.retriever, agent.KnowledgeBases, call.ID())
+		// A small knowledge base goes straight into the instructions; only a
+		// large one is searched mid-call (see renderInlineKnowledge).
+		inlineKnowledge = renderInlineKnowledge(agent.KnowledgeDocuments)
+		var knowledge *knowledgeToolbox
+		if inlineKnowledge == "" {
+			knowledge = newKnowledgeToolbox(c.retriever, agent.KnowledgeBases, call.ID())
+		} else {
+			log.Printf("voicecall: call %s has its knowledge base in the prompt (%d sources, %d chars)", call.ID(), len(agent.KnowledgeDocuments), len(inlineKnowledge))
+		}
 		var reserved []string
 		if knowledge != nil {
 			reserved = append(reserved, knowledgeToolName)
@@ -634,13 +635,16 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		custom := newCustomToolbox(agent.Tools, reserved, controls, call.ID())
 		toolbox = newCombinedToolbox(knowledge, custom)
 	}
+	toolDirectives := ""
 	if toolbox != nil {
-		instructions = strings.TrimSpace(instructions + "\n\n" + toolbox.Instructions())
-		openAICfg.Instructions = instructions
+		toolDirectives = toolbox.Instructions()
 		openAICfg.Tools = toolbox
-		openAICfg.LLM = openAICfg.LLM.withTools(toolbox)
 		log.Printf("voicecall: call %s can use %s", call.ID(), toolbox.describe())
 	}
+	// The owner's prompt first, then what the agent knows and can do, and the
+	// phone-manner and accuracy rules last, where they carry the most weight.
+	instructions = composeCallInstructions(instructions, inlineKnowledge, toolDirectives)
+	openAICfg.Instructions = instructions
 	if agent != nil {
 		if mode := strings.TrimSpace(agent.BeginMessageMode); mode != "" {
 			beginMessageMode = mode
@@ -653,20 +657,13 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		if beginMessageMode != "" {
 			log.Printf("voicecall: call %s begin_message_mode=%s", call.ID(), beginMessageMode)
 		}
-		if provider == "openai" || provider == "openai_realtime" {
-			if model := strings.TrimSpace(agent.TranscribeModel); model != "" {
-				openAICfg.TranscriptionModel = model
-				log.Printf("voicecall: call %s using agent transcriber model=%q", call.ID(), openAICfg.TranscriptionModel)
-			}
-			if voice := strings.TrimSpace(agent.Voice); voice != "" {
-				openAICfg.Voice = normalizeOpenAITTSVoice(voice)
-				log.Printf("voicecall: call %s using OpenAI TTS voice=%q", call.ID(), openAICfg.Voice)
-			}
-			if model := strings.TrimSpace(agent.OpenAIVoiceModel); model != "" {
-				openAICfg.TTSModel = normalizeOpenAITTSModel(model)
-			}
-			openAICfg.VoiceInstructions = agent.VoiceInstructions
+		if voice := strings.TrimSpace(agent.Voice); voice != "" {
+			openAICfg.Voice = normalizeOpenAIRealtimeVoice(voice)
 		}
+		if model := strings.TrimSpace(agent.RealtimeModel); model != "" {
+			openAICfg.RealtimeModel = model
+		}
+		openAICfg.Language = strings.TrimSpace(agent.Language)
 		if agent.Speed > 0 {
 			speed = clampSpeed(agent.Speed)
 			openAICfg.Speed = speed
@@ -680,27 +677,48 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		}
 	}
 
-	// An outbound greeting is synthesized while the callee's phone is still
-	// ringing, so a delay left on the bridge would elapse against the ringback
-	// instead of against the answered call — the agent's configured pause would
-	// simply never be heard. Hold it here and apply it from the moment the call
-	// goes live, which is what the setting means.
+	// The greeting is synthesized before anyone can hear it — while an outbound
+	// callee's phone is still ringing, or while an inbound call is still being
+	// answered — so a delay left on the bridge would elapse against the ringing
+	// instead of against the live call, and the agent's configured pause would
+	// never be heard. Hold it here and apply it from the moment the call goes
+	// live, which is what the setting means.
 	liveDelayMs := 0
-	if callType == models.CallTypeOutbound && agentSpeaksFirst(beginMessageMode) {
+	if agentSpeaksFirst(beginMessageMode) {
 		liveDelayMs = welcomeDelayMs
 		welcomeDelayMs = 0
 		openAICfg.WelcomeDelayMs = 0
 	}
 
 	// Only one player streams into the call at a time. playSource swaps in a new
-	// one (stopping the old) for each response. Outbound greetings can be
-	// generated while the destination is still ringing, so their source is held
-	// without being consumed until the call is live (see markLive).
+	// one (stopping the old) for each response. Audio generated before the call
+	// is live (an outbound greeting while the destination rings, an inbound one
+	// while the answer is in flight) is held without being consumed until then
+	// (see markLive and the answer below), so its first words are not lost.
 	var playerMu sync.Mutex
 	var player *meowcaller.Player
 	var pendingSource meowcaller.AudioSource
 	var pendingLabel string
-	playbackEnabled := callType != models.CallTypeOutbound
+	playbackEnabled := false
+
+	// The watchdog starts when the call goes live and stops when it ends.
+	watchdog := newCallWatchdog(c.watchdog)
+	watchdogStop := make(chan struct{})
+	var watchdogStopOnce sync.Once
+	stopWatchdog := func() { watchdogStopOnce.Do(func() { close(watchdogStop) }) }
+
+	// hangupOnFailure says whether a Realtime session that dies should take
+	// the call down with it. It is off while an inbound call is still waiting
+	// to be answered — that path declines the call instead, leaving it to ring
+	// for a human — and on for everything already in progress.
+	var hangupOnFailure atomic.Bool
+	hangupOnFailure.Store(callType == models.CallTypeOutbound)
+	var failureReason atomic.Value
+	var callEnded atomic.Bool
+
+	// Assigned once the bridge exists, below; the closures that read it only
+	// run after that.
+	var voiceBridge *openAIRealtimeVoiceBridge
 
 	stopPlayer := func() {
 		playerMu.Lock()
@@ -724,6 +742,7 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		// agent's closing line specifically, rather than firing on whatever
 		// happened to be playing when the tool ran.
 		seq := controls.playbackStarted()
+		watchdog.touch()
 		next.OnFinish(func() {
 			log.Printf("voicecall: finished playing %s into call %s", label, call.ID())
 			playerMu.Lock()
@@ -731,6 +750,8 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 				player = nil
 			}
 			playerMu.Unlock()
+			// Silence is counted from the end of what the agent said.
+			watchdog.touch()
 			controls.playbackFinished(seq)
 		})
 
@@ -762,7 +783,22 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		if oldPending != nil {
 			_ = oldPending.Close()
 		}
-		log.Printf("voicecall: holding %s until outbound call %s is live", label, call.ID())
+		log.Printf("voicecall: holding %s until call %s is live", label, call.ID())
+	}
+
+	// startWatchdog begins the silence and call-length checks once the call is
+	// live in either direction.
+	startWatchdog := func() {
+		watchdog.start(call.ID(), watchdogStop,
+			func() bool {
+				playerMu.Lock()
+				playing := player != nil
+				playerMu.Unlock()
+				return playing || voiceBridge.Busy()
+			},
+			voiceBridge.RequestResponse,
+			controls.EndCall,
+		)
 	}
 
 	enablePlayback := func() {
@@ -816,6 +852,7 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		if liveDelayMs <= 0 {
 			enablePlayback()
 		}
+		startWatchdog()
 	}
 
 	var answeredOnce sync.Once
@@ -876,64 +913,26 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		}
 	}
 
-	var voiceBridge meowcaller.AudioSink
-	if provider == "11labs" {
-		elevenLabsCfg := c.elevenLabs
-		elevenLabsCfg.Instructions = instructions
-		if toolbox != nil {
-			elevenLabsCfg.LLM = elevenLabsCfg.LLM.withTools(toolbox)
-		}
-		if agent != nil {
-			elevenLabsCfg.LLMProvider = agent.LLMProvider
-			elevenLabsCfg.LLMModel = agent.LLMModel
-			elevenLabsCfg.LLMTemperature = agent.LLMTemperature
-		}
-		elevenLabsCfg.BeginMessageMode = beginMessageMode
-		elevenLabsCfg.WelcomeMessage = welcomeMessage
-		elevenLabsCfg.WelcomeDelayMs = welcomeDelayMs
-		elevenLabsCfg.Speed = speed
-		elevenLabsCfg.Volume = volume
-		if agent != nil {
-			elevenLabsCfg.VoiceID = strings.TrimSpace(agent.ElevenLabsVoiceID)
-			elevenLabsCfg.ModelID = resolveElevenLabsTTSModel(agent.ElevenLabsModel, agent.Language)
-			elevenLabsCfg.STTModel = normalizeScribeModel(agent.ElevenLabsTranscribeModel)
-			elevenLabsCfg.Language = strings.TrimSpace(agent.Language)
-		}
-		log.Printf("voicecall: call %s using ElevenLabs pipeline transcriber=%q voice=%q model=%q language=%q", call.ID(), elevenLabsCfg.STTModel, elevenLabsCfg.VoiceID, elevenLabsCfg.ModelID, elevenLabsCfg.Language)
-		if language := strings.TrimSpace(elevenLabsCfg.Language); language != "" && !elevenLabsSpeaksLanguage(elevenLabsCfg.ModelID, language) {
-			log.Printf("voicecall: call %s: ElevenLabs voice model %q does not speak %q — the reply text will be in it, the audio will not. Switch this agent's voice provider to OpenAI.", call.ID(), elevenLabsCfg.ModelID, language)
-		}
-		voiceBridge = newElevenLabsVoiceBridge(elevenLabsCfg, func(source meowcaller.AudioSource) {
-			playSource(source, "ElevenLabs response")
-		}, stopPlayer)
-	} else {
-		if agent != nil {
-			openAICfg.LLMProvider = agent.LLMProvider
-			openAICfg.LLMModel = agent.LLMModel
-			openAICfg.LLMTemperature = agent.LLMTemperature
-			openAICfg.Language = strings.TrimSpace(agent.Language)
-			if model := strings.TrimSpace(agent.RealtimeModel); model != "" {
-				openAICfg.RealtimeModel = model
+	log.Printf("voicecall: call %s using OpenAI Realtime model=%q voice=%q language=%q", call.ID(), openAICfg.RealtimeModel, openAICfg.Voice, openAICfg.Language)
+	voiceBridge = newOpenAIRealtimeVoiceBridgeWithHooks(openAICfg, func(source meowcaller.AudioSource) {
+		playSource(source, "OpenAI Realtime response")
+	}, stopPlayer, bridgeHooks{
+		onCallerSpeech: watchdog.callerSpoke,
+		onFailure: func(err error) {
+			if callEnded.Load() || !hangupOnFailure.Load() {
+				return
 			}
-		}
-		// Realtime is an explicit per-agent provider. Standard OpenAI never
-		// silently changes to the native speech-to-speech route.
-		if provider == "openai_realtime" {
-			openAICfg.Voice = normalizeOpenAIRealtimeVoice(openAICfg.Voice)
-			log.Printf("voicecall: call %s using low-latency OpenAI Realtime model=%q voice=%q", call.ID(), openAICfg.RealtimeModel, openAICfg.Voice)
-			voiceBridge = newOpenAIRealtimeVoiceBridge(openAICfg, func(source meowcaller.AudioSource) {
-				playSource(source, "OpenAI Realtime response")
-			}, stopPlayer)
-		} else {
-			openAICfg.Voice = normalizeOpenAITTSVoiceForModel(openAICfg.Voice, openAICfg.TTSModel)
-			log.Printf("voicecall: call %s using standard OpenAI pipeline transcriber=%q llm=%s/%s tts=%q voice=%q", call.ID(), openAICfg.TranscriptionModel, normalizeLLMProvider(openAICfg.LLMProvider), openAICfg.LLMModel, openAICfg.TTSModel, openAICfg.Voice)
-			voiceBridge = newOpenAIStandardVoiceBridge(openAICfg, func(source meowcaller.AudioSource) {
-				playSource(source, "OpenAI TTS response")
-			}, stopPlayer)
-		}
-	}
+			// The agent can no longer hear or speak; an open line with nobody
+			// on it is worse for the caller than an ended call.
+			log.Printf("voicecall: call %s lost its AI session (%v); hanging up", call.ID(), err)
+			failureReason.Store("ai session lost: " + err.Error())
+			if hangupErr := call.Hangup(); hangupErr != nil {
+				log.Printf("voicecall: call %s could not be hung up: %v", call.ID(), hangupErr)
+			}
+		},
+	})
 	// The bridge is the one sink that needs the caller's pauses delivered as
-	// audio rather than as a gap in the stream: its transcriber decides the turn
+	// audio rather than as a gap in the stream: the Realtime VAD decides the turn
 	// is over by how much silence it has heard.
 	incomingSinks = append(incomingSinks, newSilenceFilledSink(voiceBridge, silenceFillWindow()))
 
@@ -942,8 +941,46 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 	incomingAudio := multiSink(incomingSinks)
 	call.Receive(incomingAudio)
 
+	// declinedToHuman marks an inbound call this server chose not to answer
+	// after all (the AI session could not start, or the answer failed). Its
+	// outcome is already recorded, so OnEnd — which still fires when the call
+	// finally ends elsewhere — must not record it again.
+	var declinedToHuman atomic.Bool
+
+	// cleanup tears down everything this call holds, once, whichever path gets
+	// there first: the call ending, or an inbound call given up before answer.
+	var cleanupOnce sync.Once
+	cleanup := func() {
+		cleanupOnce.Do(func() {
+			stopWatchdog()
+			c.releaseCall(call.ID())
+			if record != nil {
+				c.forgetLive(record.id)
+			}
+			stopPlayer()
+			// Close first: it waits for the bridge's goroutines to finish, so the
+			// transcript read below sees every completed turn and no concurrent
+			// write.
+			_ = voiceBridge.Close()
+			record.saveTranscript(toCallMessages(voiceBridge.Transcript()))
+			if err := incomingAudio.Close(); err != nil {
+				log.Printf("voicecall: could not close incoming audio sinks for call %s: %v", call.ID(), err)
+			}
+		})
+	}
+
 	call.OnEnd(func(reason string) {
 		log.Printf("voicecall: call %s ended: %s", call.ID(), reason)
+		callEnded.Store(true)
+		stopWatchdog()
+		// The wire reason is usually empty when this side hung up; say why.
+		if strings.TrimSpace(reason) == "" {
+			if failed, ok := failureReason.Load().(string); ok {
+				reason = failed
+			} else if released := controls.releaseReason(); released != "" {
+				reason = released
+			}
+		}
 		// A release a tool armed moments ago must not fire against a call that is
 		// already gone.
 		controls.stop()
@@ -960,28 +997,30 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		// their side while it rang. Recording that as "ended" would make it
 		// indistinguishable in history from a conversation that ran its course, so it
 		// gets its own status; the wire reason is kept either way.
-		if callType == models.CallTypeOutbound && !accepted {
+		switch {
+		case declinedToHuman.Load():
+			// Already recorded as failed when this server gave the call up.
+		case callType == models.CallTypeOutbound && !accepted:
 			record.declined(reason)
-		} else {
+		default:
 			record.ended(reason)
 		}
-		c.releaseCall(call.ID())
 		for _, timer := range pending {
 			if timer != nil {
 				timer.Stop()
 			}
 		}
-		stopPlayer()
-		// Close first: it waits for the bridge's goroutines to finish, so the
-		// transcript read below sees every completed turn and no concurrent write.
-		_ = voiceBridge.Close()
-		if recorder, ok := voiceBridge.(transcriptRecorder); ok {
-			record.saveTranscript(toCallMessages(recorder.Transcript()))
-		}
-		if err := incomingAudio.Close(); err != nil {
-			log.Printf("voicecall: could not close incoming audio sinks for call %s: %v", call.ID(), err)
-		}
+		cleanup()
 	})
+
+	// Reachable by HangupCall from here on. A call that ended before it was
+	// tracked has already run cleanup, so it is taken straight back out.
+	if record != nil {
+		c.trackLive(record.id, liveCall{call: call, reason: &failureReason})
+		if callEnded.Load() {
+			c.forgetLive(record.id)
+		}
+	}
 
 	if callType == models.CallTypeOutbound {
 		// The offer is already on the wire and the callee's phone is ringing. From
@@ -991,18 +1030,63 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		return nil
 	}
 
+	// Let the phone ring while the Realtime session connects, so the caller is
+	// picked up by an agent that can already hear and speak. A session that
+	// cannot start at all means the call is never answered here: it keeps
+	// ringing on the owner's phone, exactly as for a number with no live agent.
+	waitStarted := time.Now()
+	select {
+	case <-voiceBridge.Ready():
+		if err := voiceBridge.Err(); err != nil {
+			if callEnded.Load() {
+				return nil
+			}
+			log.Printf("voicecall: not answering call %s: the AI session could not start (%v); leaving it to ring for a person", call.ID(), err)
+			declinedToHuman.Store(true)
+			record.failed("ai session unavailable: " + err.Error())
+			cleanup()
+			return fmt.Errorf("realtime session: %w", err)
+		}
+		log.Printf("voicecall: call %s AI session ready after %dms of ringing", call.ID(), time.Since(waitStarted).Milliseconds())
+	case <-time.After(c.answerWait):
+		log.Printf("voicecall: call %s AI session not ready after %s; answering anyway", call.ID(), c.answerWait)
+	}
+	if callEnded.Load() {
+		// The caller gave up while it rang; OnEnd has already recorded it.
+		return nil
+	}
+
 	log.Printf("voicecall: answering call %s", call.ID())
+	hangupOnFailure.Store(true)
 	if err := call.Answer(); err != nil {
 		log.Printf("voicecall: could not answer call %s: %v", call.ID(), err)
+		declinedToHuman.Store(true)
 		record.failed("answer failed: " + err.Error())
-		c.releaseCall(call.ID())
-		stopPlayer()
-		_ = voiceBridge.Close()
-		_ = incomingAudio.Close()
+		cleanup()
 		return fmt.Errorf("answer call: %w", err)
 	}
 	record.answered()
 	log.Printf("voicecall: answered call %s", call.ID())
+
+	// The call is live: release any greeting generated while it was being
+	// answered, after the agent's configured pause.
+	if liveDelayMs > 0 {
+		liveMu.Lock()
+		if !wentLive {
+			delayTimer = time.AfterFunc(time.Duration(liveDelayMs)*time.Millisecond, enablePlayback)
+		}
+		liveMu.Unlock()
+	} else {
+		enablePlayback()
+	}
+	startWatchdog()
+	// A session that failed in the instant before the answer was not hung up
+	// by onFailure; do it now.
+	if err := voiceBridge.Err(); err != nil && !callEnded.Load() {
+		log.Printf("voicecall: call %s lost its AI session while answering (%v); hanging up", call.ID(), err)
+		failureReason.Store("ai session lost: " + err.Error())
+		_ = call.Hangup()
+	}
 	return nil
 }
 

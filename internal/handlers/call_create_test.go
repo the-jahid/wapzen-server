@@ -159,11 +159,6 @@ func TestPlaceCallErrorResponse(t *testing.T) {
 			wantStatus: http.StatusServiceUnavailable,
 		},
 		{
-			name:       "unconfigured agent provider is unavailable",
-			err:        fmt.Errorf("%w: agent a_1 selected voice provider %q", whatsapplogin.ErrAgentUnavailable, "11labs"),
-			wantStatus: http.StatusServiceUnavailable,
-		},
-		{
 			name:       "an unreachable peer is an upstream failure",
 			err:        errors.New("place call: peer 15557654321@lid has no devices"),
 			wantStatus: http.StatusBadGateway,

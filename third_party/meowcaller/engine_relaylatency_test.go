@@ -39,8 +39,8 @@ func (r *recordingSignalIO) nodes() []waBinary.Node {
 }
 
 // relayLatencyEngine builds an engine holding one call in the given direction,
-// with a relay allocation offering ccu1c02 twice (two address families) and
-// fdac178c01 once.
+// with a relay allocation offering ccu1c02 twice (two address families) and the
+// faster FNA relay fdac178c01 once, as the server's call ack does.
 func relayLatencyEngine(direction CallDirection) (*engine, *recordingSignalIO) {
 	io := &recordingSignalIO{}
 	e := &engine{
@@ -54,9 +54,9 @@ func relayLatencyEngine(direction CallDirection) (*engine, *recordingSignalIO) {
 				peerDevices: []types.JID{peerJID()},
 				relay: &relayData{
 					endpoints: []relayEndpoint{
-						{relayName: "ccu1c02", c2rRTT: 16, addressBytes: []byte{31, 13, 64, 133, 13, 150}},
-						{relayName: "ccu1c02", c2rRTT: 16, addressBytes: []byte{31, 13, 64, 134, 13, 150}},
-						{relayName: "fdac178c01", c2rRTT: 7, addressBytes: []byte{202, 136, 90, 96, 13, 152}},
+						{relayName: "ccu1c02", authTokenID: 1, c2rRTT: 16, addressBytes: []byte{31, 13, 64, 133, 13, 150}},
+						{relayName: "ccu1c02", authTokenID: 1, c2rRTT: 16, addressBytes: []byte{31, 13, 64, 134, 13, 150}},
+						{relayName: "fdac178c01", isFNA: true, c2rRTT: 7, addressBytes: []byte{202, 136, 90, 96, 13, 152}},
 					},
 				},
 			},
@@ -76,17 +76,18 @@ func childNode(t *testing.T, parent waBinary.Node, tag string) waBinary.Node {
 	return waBinary.Node{}
 }
 
-// TestReportRelayLatencyReportsEachRelayOnce pins the caller's half of the relay
-// election: one <relaylatency> per candidate relay name, carrying the server's
-// c2r_rtt in the 0x2000000+rtt wire encoding and the endpoint address verbatim,
-// addressed to the callee's devices.
-func TestReportRelayLatencyReportsEachRelayOnce(t *testing.T) {
+// TestReportRelayLatencyReportsOnlyBoundRelay pins the caller's half of the relay
+// election: one <relaylatency> for the relay media binds to, carrying the
+// server's c2r_rtt in the 0x2000000+rtt wire encoding and the endpoint address
+// verbatim, addressed to the callee's devices. The faster FNA relay is never
+// reported: the callee would elect it and stream where we are not listening.
+func TestReportRelayLatencyReportsOnlyBoundRelay(t *testing.T) {
 	e, io := relayLatencyEngine(CallDirectionOutgoing)
 	e.reportRelayLatency("CID")
 
 	sent := io.nodes()
-	if len(sent) != 2 {
-		t.Fatalf("sent %d stanzas, want 2 (one per distinct relay name)", len(sent))
+	if len(sent) != 1 {
+		t.Fatalf("sent %d stanzas, want 1 (the bound relay only)", len(sent))
 	}
 
 	byRelay := map[string]waBinary.Node{}
@@ -121,8 +122,7 @@ func TestReportRelayLatencyReportsEachRelayOnce(t *testing.T) {
 		latency string
 		addr    []byte
 	}{
-		{"ccu1c02", "33554448", []byte{31, 13, 64, 133, 13, 150}},     // 0x2000000 + 16
-		{"fdac178c01", "33554439", []byte{202, 136, 90, 96, 13, 152}}, // 0x2000000 + 7
+		{"ccu1c02", "33554448", []byte{31, 13, 64, 133, 13, 150}}, // 0x2000000 + 16
 	} {
 		te, ok := byRelay[want.relay]
 		if !ok {
@@ -137,6 +137,9 @@ func TestReportRelayLatencyReportsEachRelayOnce(t *testing.T) {
 			t.Errorf("%s address = %v, want %v", want.relay, addr, want.addr)
 		}
 	}
+	if _, ok := byRelay["fdac178c01"]; ok {
+		t.Error("reported the FNA relay media never binds to")
+	}
 }
 
 // TestReportRelayLatencyIsOncePerCall keeps a re-delivered relay allocation from
@@ -146,8 +149,8 @@ func TestReportRelayLatencyIsOncePerCall(t *testing.T) {
 	e.reportRelayLatency("CID")
 	e.reportRelayLatency("CID")
 
-	if got := len(io.nodes()); got != 2 {
-		t.Fatalf("sent %d stanzas across two reports, want 2", got)
+	if got := len(io.nodes()); got != 1 {
+		t.Fatalf("sent %d stanzas across two reports, want 1", got)
 	}
 }
 
@@ -176,7 +179,7 @@ func TestReportRelayLatencyWithoutEndpointsStaysArmed(t *testing.T) {
 
 	e.calls["CID"].relay = full
 	e.reportRelayLatency("CID")
-	if got := len(io.nodes()); got != 2 {
-		t.Fatalf("sent %d stanzas once endpoints arrived, want 2", got)
+	if got := len(io.nodes()); got != 1 {
+		t.Fatalf("sent %d stanzas once endpoints arrived, want 1", got)
 	}
 }

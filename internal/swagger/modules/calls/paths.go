@@ -2,8 +2,8 @@ package calls
 
 import "whatsapp-ai-caller-server/internal/swagger/oas"
 
-func apiKeySecurity() []any {
-	return []any{oas.Object{"apiKeyBearer": []any{}}}
+func bearerSecurity() []any {
+	return []any{oas.Object{"bearer": []any{}}}
 }
 
 func callIDParam() oas.Object {
@@ -70,13 +70,13 @@ func listCallsOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listCalls",
 		"summary":     "List Calls",
-		"description": "Returns a paginated list of the calls handled for the authenticated API key owner, newest first.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a paginated list of the calls handled for the authenticated user, newest first.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{pageParam(), limitParam()},
 		"responses": oas.Object{
 			"200": okJSON("A page of calls.", "CallListResponse", callListResponseExample()),
 			"400": response("Invalid query parameters (page or limit)."),
-			"401": response("Unauthorized - missing or invalid API key bearer token."),
+			"401": response("Unauthorized - missing or invalid bearer token."),
 			"500": response("Internal Server Error"),
 		},
 	}
@@ -87,17 +87,17 @@ func createCallOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "createCall",
 		"summary":     "Create Call",
-		"description": "Places a new outbound WhatsApp call from one of the authenticated API key owner's connected " +
+		"description": "Places a new outbound WhatsApp call from one of the authenticated user's connected " +
 			"phone numbers. The agent that speaks is the one assigned to that number, so only the number and the " +
 			"destination are required. It returns as soon as the callee's phone is ringing: the call comes back in " +
 			"the \"received\" status and advances to \"answered\" when they pick up — or \"declined\" if they cut it " +
 			"while it rings — so poll Get Call (or read the transcript once it has ended) to follow it.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"requestBody": requestBody("The call to place.", "CreateCallRequest", createCallRequestExample()),
 		"responses": oas.Object{
 			"201": okJSON("The call was placed and is ringing.", "CreateCallResponse", createCallResponseExample()),
 			"400": response("Invalid request body — phone_number_id or to is missing or malformed, or agent_id names an agent that is not assigned to this phone number."),
-			"401": response("Unauthorized - missing or invalid API key bearer token."),
+			"401": response("Unauthorized - missing or invalid bearer token."),
 			"404": response("No such phone number for this user."),
 			"409": response("The phone number is not connected, has no call handler attached, or has no active outbound-capable agent assigned."),
 			"500": response("Internal Server Error"),
@@ -113,11 +113,11 @@ func getCallOperation() oas.Object {
 		"operationId": "getCall",
 		"summary":     "Get Call",
 		"description": "Returns a single call owned by the authenticated user, including its saved AI/user conversation transcript.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{callIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The call, including its transcript.", "CallResponse", callResponseExample()),
-			"401": response("Unauthorized - missing or invalid API key bearer token."),
+			"401": response("Unauthorized - missing or invalid bearer token."),
 			"404": response("Not Found"),
 			"500": response("Internal Server Error"),
 		},
@@ -130,13 +130,13 @@ func updateCallOperation() oas.Object {
 		"operationId": "updateCall",
 		"summary":     "Update Call",
 		"description": "Applies a partial update to a call. Only status and end_reason may be changed; at least one must be supplied.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{callIDParam()},
 		"requestBody": requestBody("The call fields to change.", "UpdateCallRequest", updateCallRequestExample()),
 		"responses": oas.Object{
 			"200": okJSON("The updated call.", "CallResponse", updateCallResponseExample()),
 			"400": response("Bad Request"),
-			"401": response("Unauthorized - missing or invalid API key bearer token."),
+			"401": response("Unauthorized - missing or invalid bearer token."),
 			"404": response("Not Found"),
 			"500": response("Internal Server Error"),
 		},
@@ -149,11 +149,11 @@ func deleteCallOperation() oas.Object {
 		"operationId": "deleteCall",
 		"summary":     "Delete Call",
 		"description": "Deletes a call owned by the authenticated user. Its saved transcript is removed with it.",
-		"security":    apiKeySecurity(),
+		"security":    bearerSecurity(),
 		"parameters":  []any{callIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The call was deleted.", "CallDeleteResponse", deleteCallResponseExample()),
-			"401": response("Unauthorized - missing or invalid API key bearer token."),
+			"401": response("Unauthorized - missing or invalid bearer token."),
 			"404": response("Not Found"),
 			"500": response("Internal Server Error"),
 		},

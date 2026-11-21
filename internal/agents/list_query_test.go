@@ -99,7 +99,7 @@ func TestApplyFieldSelectionEmptyIsNonNilSlice(t *testing.T) {
 // TestSelectFieldsMatchesDocumentedExample confirms the sparse-fieldset
 // projection produces exactly the shape advertised by the static docs example.
 func TestSelectFieldsMatchesDocumentedExample(t *testing.T) {
-	fields := []string{"id", "agent.status", "agent.language", "agent.call_direction"}
+	fields := []string{"id", "agent.status", "agent.language", "agent.name"}
 	data, err := applyFieldSelection([]types.AgentResource{examples.AgentResourceExample}, fields)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -113,9 +113,9 @@ func TestSelectFieldsMatchesDocumentedExample(t *testing.T) {
 	want := map[string]any{
 		"id": "agent_12345",
 		"agent": map[string]any{
-			"status":         "active",
-			"language":       "en-US",
-			"call_direction": "outbound",
+			"status":   "active",
+			"language": "en-US",
+			"name":     "My Agent",
 		},
 	}
 	if !reflect.DeepEqual(got[0], want) {

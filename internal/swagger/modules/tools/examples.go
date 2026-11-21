@@ -43,7 +43,6 @@ func apiRequestToolExample() oas.Object {
 	tool := createToolRequestExample()
 	tool["id"] = "tool_12345"
 	tool["agent_ids"] = []any{}
-	tool["chat_agent_ids"] = []any{}
 	tool["created_at"] = "2026-08-19T10:00:00Z"
 	tool["updated_at"] = "2026-08-19T10:00:00Z"
 	return tool
@@ -55,12 +54,11 @@ func apiRequestToolExample() oas.Object {
 // which is what sharing a single definition looks like in the list.
 func transferCallToolExample() oas.Object {
 	return oas.Object{
-		"id":             "tool_23456",
-		"type":           ToolTypeTransferCall,
-		"name":           "transfer_to_human",
-		"description":    "Transfer the caller to the support desk when they ask for a person.",
-		"agent_ids":      []any{"agent_12345", "agent_67890"},
-		"chat_agent_ids": []any{},
+		"id":          "tool_23456",
+		"type":        ToolTypeTransferCall,
+		"name":        "transfer_to_human",
+		"description": "Transfer the caller to the support desk when they ask for a person.",
+		"agent_ids":   []any{"agent_12345", "agent_67890"},
 		"transfer_call": oas.Object{
 			"destination": "+8801639726992",
 			"message":     "Connecting you to a teammate now, one moment.",
@@ -76,12 +74,10 @@ func endCallToolExample() oas.Object {
 		"type":        ToolTypeEndCall,
 		"name":        "end_call",
 		"description": "Hang up politely once the caller says they are done.",
-		// Attached to nothing, and a chat agent could not use it anyway: ending a
-		// call is meaningless in a conversation that has none.
-		"agent_ids":      []any{},
-		"chat_agent_ids": []any{},
-		"created_at":     "2026-08-19T10:10:00Z",
-		"updated_at":     "2026-08-19T10:10:00Z",
+		// Attached to nothing.
+		"agent_ids":  []any{},
+		"created_at": "2026-08-19T10:10:00Z",
+		"updated_at": "2026-08-19T10:10:00Z",
 	}
 }
 
@@ -90,7 +86,7 @@ func createToolResponseExample() oas.Object {
 		"success": true,
 		"message": "Tool created successfully",
 		"data":    apiRequestToolExample(),
-		"links":   oas.Object{"self": "/v1/tools/tool_12345"},
+		"links":   oas.Object{"self": "/v1/voice/tools/tool_12345"},
 	}
 }
 
@@ -99,7 +95,7 @@ func toolResponseExample() oas.Object {
 		"success": true,
 		"message": "Tool retrieved successfully",
 		"data":    apiRequestToolExample(),
-		"links":   oas.Object{"self": "/v1/tools/tool_12345"},
+		"links":   oas.Object{"self": "/v1/voice/tools/tool_12345"},
 	}
 }
 
@@ -123,11 +119,11 @@ func toolListResponseExample() oas.Object {
 			},
 		},
 		"links": oas.Object{
-			"self":     "/v1/tools?page=1&limit=50",
-			"first":    "/v1/tools?page=1&limit=50",
+			"self":     "/v1/voice/tools?page=1&limit=50",
+			"first":    "/v1/voice/tools?page=1&limit=50",
 			"previous": nil,
 			"next":     nil,
-			"last":     "/v1/tools?page=1&limit=50",
+			"last":     "/v1/voice/tools?page=1&limit=50",
 		},
 	}
 }
@@ -148,7 +144,7 @@ func updateToolResponseExample() oas.Object {
 		"success": true,
 		"message": "Tool updated successfully",
 		"data":    tool,
-		"links":   oas.Object{"self": "/v1/tools/tool_12345"},
+		"links":   oas.Object{"self": "/v1/voice/tools/tool_12345"},
 	}
 }
 

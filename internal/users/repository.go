@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"whatsapp-ai-caller-server/internal/apikeys"
 	"whatsapp-ai-caller-server/internal/models"
 )
 
@@ -40,8 +39,7 @@ func NewRepository(pool *pgxpool.Pool, onNewUser ...NewUserHook) *Repository {
 }
 
 // Upsert creates or updates a user by Clerk user ID. A newly inserted user also
-// receives one automatic default API key and whatever the NewUserHooks
-// provision; updates never create any of them again.
+// gets whatever the NewUserHooks provision; updates never run them again.
 func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.User, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -58,9 +56,6 @@ func (r *Repository) Upsert(ctx context.Context, params UpsertParams) (models.Us
 
 	user, err := scanUser(tx.QueryRow(ctx, insertQuery, params.Email, params.ClerkID, params.Username))
 	if err == nil {
-		if _, err := apikeys.CreateDefaultWithQuerier(ctx, tx, user.ID); err != nil {
-			return models.User{}, fmt.Errorf("create default api key: %w", err)
-		}
 		for _, hook := range r.onNewUser {
 			if err := hook(ctx, tx, user.ID); err != nil {
 				return models.User{}, fmt.Errorf("provision new user: %w", err)
@@ -120,7 +115,7 @@ func (r *Repository) GetByClerkID(ctx context.Context, clerkID string) (models.U
 func (r *Repository) FirstPhoneNumber(ctx context.Context, userID string) (string, error) {
 	var phone string
 	err := r.pool.QueryRow(ctx, `
-		SELECT phone_number FROM phone_numbers
+		SELECT phone_number FROM voice_phone_numbers
 		WHERE user_id = $1 AND phone_number <> ''
 		ORDER BY created_at LIMIT 1`, userID).Scan(&phone)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -171,14 +171,13 @@ type Tool struct {
 	Type        string `json:"type" example:"api_request"`
 	Name        string `json:"name" example:"check_availability"`
 	Description string `json:"description" example:"Look up open appointment slots for a given day."`
-	// AgentIDs and ChatAgentIDs are the agents this tool is attached to, empty
-	// while it is attached to none. A tool is shared: the same definition can be
-	// attached to any number of agents of either kind. Read-only here: a tool is
-	// attached by writing that agent's tools.tool_ids, so the fact has one write
-	// path rather than two that can disagree. They are returned so a client can
-	// see where a tool is in use before it changes or deletes one.
+	// AgentIDs are the agents this tool is attached to, empty while it is
+	// attached to none. A tool is shared: the same definition can be attached
+	// to any number of agents. Read-only here: a tool is attached by writing
+	// that agent's tools.tool_ids, so the fact has one write path rather than
+	// two that can disagree. They are returned so a client can see where a tool
+	// is in use before it changes or deletes one.
 	AgentIDs     []string                `json:"agent_ids"`
-	ChatAgentIDs []string                `json:"chat_agent_ids"`
 	APIRequest   *ToolAPIRequestConfig   `json:"api_request,omitempty"`
 	TransferCall *ToolTransferCallConfig `json:"transfer_call,omitempty"`
 	SendText     *ToolSendTextConfig     `json:"send_text,omitempty"`

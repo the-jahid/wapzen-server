@@ -2,6 +2,7 @@ package swagger
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -81,58 +82,44 @@ func TestBuildDocumentStructure(t *testing.T) {
 			t.Errorf("/v1/agents/{agent_id} missing %s operation", m)
 		}
 	}
-	chatCollection, _ := paths["/v1/chat-agents"].(map[string]any)
-	if chatCollection == nil {
-		t.Fatal("path /v1/chat-agents not found")
-	}
-	for _, m := range []string{"get", "post"} {
-		if _, ok := chatCollection[m]; !ok {
-			t.Errorf("/v1/chat-agents missing %s operation", m)
+	// The chat agent feature was removed; its paths must not be advertised.
+	for p := range paths {
+		if strings.Contains(p, "chat-agents") || strings.Contains(p, "chat-conversations") {
+			t.Errorf("removed chat path %s is still documented", p)
 		}
-		assertOperationSecurity(t, chatCollection, m, "apiKeyBearer")
 	}
-	chatItem, _ := paths["/v1/chat-agents/{chat_agent_id}"].(map[string]any)
-	if chatItem == nil {
-		t.Fatal("path /v1/chat-agents/{chat_agent_id} not found")
-	}
-	for _, m := range []string{"get", "patch", "delete"} {
-		if _, ok := chatItem[m]; !ok {
-			t.Errorf("/v1/chat-agents/{chat_agent_id} missing %s operation", m)
-		}
-		assertOperationSecurity(t, chatItem, m, "apiKeyBearer")
-	}
-	phoneNumberCollection, _ := paths["/v1/phone-number"].(map[string]any)
+	phoneNumberCollection, _ := paths["/v1/voice/phone-number"].(map[string]any)
 	if phoneNumberCollection == nil {
-		t.Fatal("path /v1/phone-number not found")
+		t.Fatal("path /v1/voice/phone-number not found")
 	}
 	if _, ok := phoneNumberCollection["get"]; !ok {
-		t.Error("/v1/phone-number missing get operation")
+		t.Error("/v1/voice/phone-number missing get operation")
 	}
-	assertOperationSecurity(t, phoneNumberCollection, "get", "apiKeyBearer")
-	phoneNumberLogin, _ := paths["/v1/phone-number/login"].(map[string]any)
+	assertOperationSecurity(t, phoneNumberCollection, "get", "bearer")
+	phoneNumberLogin, _ := paths["/v1/voice/phone-number/login"].(map[string]any)
 	if phoneNumberLogin == nil {
-		t.Fatal("path /v1/phone-number/login not found")
+		t.Fatal("path /v1/voice/phone-number/login not found")
 	}
 	if _, ok := phoneNumberLogin["post"]; !ok {
-		t.Error("/v1/phone-number/login missing post operation")
+		t.Error("/v1/voice/phone-number/login missing post operation")
 	}
-	assertOperationSecurity(t, phoneNumberLogin, "post", "apiKeyBearer")
-	phoneNumberLogout, _ := paths["/v1/phone-number/logout"].(map[string]any)
+	assertOperationSecurity(t, phoneNumberLogin, "post", "bearer")
+	phoneNumberLogout, _ := paths["/v1/voice/phone-number/logout"].(map[string]any)
 	if phoneNumberLogout == nil {
-		t.Fatal("path /v1/phone-number/logout not found")
+		t.Fatal("path /v1/voice/phone-number/logout not found")
 	}
 	if _, ok := phoneNumberLogout["post"]; !ok {
-		t.Error("/v1/phone-number/logout missing post operation")
+		t.Error("/v1/voice/phone-number/logout missing post operation")
 	}
-	assertOperationSecurity(t, phoneNumberLogout, "post", "apiKeyBearer")
-	phoneNumberItem, _ := paths["/v1/phone-number/{phone_number_id}"].(map[string]any)
+	assertOperationSecurity(t, phoneNumberLogout, "post", "bearer")
+	phoneNumberItem, _ := paths["/v1/voice/phone-number/{phone_number_id}"].(map[string]any)
 	if phoneNumberItem == nil {
-		t.Fatal("path /v1/phone-number/{phone_number_id} not found")
+		t.Fatal("path /v1/voice/phone-number/{phone_number_id} not found")
 	}
 	if _, ok := phoneNumberItem["get"]; !ok {
-		t.Error("/v1/phone-number/{phone_number_id} missing get operation")
+		t.Error("/v1/voice/phone-number/{phone_number_id} missing get operation")
 	}
-	assertOperationSecurity(t, phoneNumberItem, "get", "apiKeyBearer")
+	assertOperationSecurity(t, phoneNumberItem, "get", "bearer")
 	callsCollection, _ := paths["/v1/calls"].(map[string]any)
 	if callsCollection == nil {
 		t.Fatal("path /v1/calls not found")
@@ -141,7 +128,7 @@ func TestBuildDocumentStructure(t *testing.T) {
 		if _, ok := callsCollection[m]; !ok {
 			t.Errorf("/v1/calls missing %s operation", m)
 		}
-		assertOperationSecurity(t, callsCollection, m, "apiKeyBearer")
+		assertOperationSecurity(t, callsCollection, m, "bearer")
 	}
 	callsItem, _ := paths["/v1/calls/{call_id}"].(map[string]any)
 	if callsItem == nil {
@@ -151,11 +138,11 @@ func TestBuildDocumentStructure(t *testing.T) {
 		if _, ok := callsItem[m]; !ok {
 			t.Errorf("/v1/calls/{call_id} missing %s operation", m)
 		}
-		assertOperationSecurity(t, callsItem, m, "apiKeyBearer")
+		assertOperationSecurity(t, callsItem, m, "bearer")
 	}
 
 	// Make sure the ported base endpoints survived the merge.
-	for _, p := range []string{"/health", "/api/webhooks/clerk", "/v1/api-keys", "/v1/api-keys/{api_key_id}", "/v1/api-keys/{api_key_id}/default"} {
+	for _, p := range []string{"/health", "/api/webhooks/clerk", "/v1/users/me"} {
 		if _, ok := paths[p]; !ok {
 			t.Errorf("base path %s missing after merge", p)
 		}
@@ -171,10 +158,6 @@ func TestBuildDocumentStructure(t *testing.T) {
 		"CreateAgentRequest", "UpdateAgentRequest", "AgentResource",
 		"CreateAgentResponse", "GetAgentResponse", "ListAgentsResponse",
 		"DeleteAgentResponse", "ErrorResponse",
-		"CreateChatAgentRequest", "UpdateChatAgentRequest", "ChatAgentResource",
-		"ChatAgentResponse", "ListChatAgentsResponse", "DeleteChatAgentResponse",
-		"APIKey", "CreatedAPIKey", "CreateAPIKeyRequest",
-		"ListAPIKeysResponse", "CreateAPIKeyResponse", "SetDefaultAPIKeyResponse", "RevokeAPIKeyResponse",
 		"PhoneNumberResource", "LoginPhoneNumberRequest", "LogoutPhoneNumberRequest",
 		"LoginPhoneNumberResponse", "GetPhoneNumberResponse", "ListPhoneNumbersResponse", "LogoutPhoneNumberResponse",
 	} {
@@ -183,29 +166,6 @@ func TestBuildDocumentStructure(t *testing.T) {
 		}
 	}
 
-	// Chat-agent creation requires only agent.name. The phone assignment and
-	// every configuration field are optional, and fields removed from the
-	// current diagram must not remain advertised in the contract.
-	createChat, _ := schemas["CreateChatAgentRequest"].(map[string]any)
-	createChatProps, _ := createChat["properties"].(map[string]any)
-	chatAgentSection, _ := createChatProps["agent"].(map[string]any)
-	required, _ := chatAgentSection["required"].([]any)
-	if len(required) != 1 || required[0] != "name" {
-		t.Errorf("CreateChatAgentRequest agent.required = %v, want [name]", required)
-	}
-	chatAgentProps, _ := chatAgentSection["properties"].(map[string]any)
-	for _, removed := range []string{"timezone", "message_direction", "language"} {
-		if _, ok := chatAgentProps[removed]; ok {
-			t.Errorf("CreateChatAgentRequest still advertises removed agent field %q", removed)
-		}
-	}
-	chatPrompt, _ := createChatProps["prompt"].(map[string]any)
-	chatPromptProps, _ := chatPrompt["properties"].(map[string]any)
-	for _, removed := range []string{"begin_message_mode", "begin_message"} {
-		if _, ok := chatPromptProps[removed]; ok {
-			t.Errorf("CreateChatAgentRequest still advertises removed prompt field %q", removed)
-		}
-	}
 	secSchemes, _ := components["securitySchemes"].(map[string]any)
 	bearer, _ := secSchemes["bearer"].(map[string]any)
 	if bearer == nil {
@@ -213,13 +173,6 @@ func TestBuildDocumentStructure(t *testing.T) {
 	}
 	if bearer["type"] != "http" || bearer["scheme"] != "bearer" {
 		t.Errorf("bearer scheme = %v, want http/bearer", bearer)
-	}
-	apiKeyBearer, _ := secSchemes["apiKeyBearer"].(map[string]any)
-	if apiKeyBearer == nil {
-		t.Fatal("components.securitySchemes.apiKeyBearer missing")
-	}
-	if apiKeyBearer["type"] != "http" || apiKeyBearer["scheme"] != "bearer" {
-		t.Errorf("apiKeyBearer scheme = %v, want http/bearer", apiKeyBearer)
 	}
 
 	// --- Two named list examples on GET /v1/agents 200. ---
@@ -229,8 +182,8 @@ func TestBuildDocumentStructure(t *testing.T) {
 		t.Fatalf("GET /v1/agents security = %v, want exactly one requirement", security)
 	}
 	requirement, _ := security[0].(map[string]any)
-	if _, ok := requirement["apiKeyBearer"]; !ok {
-		t.Errorf("GET /v1/agents security = %v, want apiKeyBearer", security)
+	if _, ok := requirement["bearer"]; !ok {
+		t.Errorf("GET /v1/agents security = %v, want bearer", security)
 	}
 	responses, _ := listGet["responses"].(map[string]any)
 	ok200, _ := responses["200"].(map[string]any)

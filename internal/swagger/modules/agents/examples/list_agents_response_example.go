@@ -36,15 +36,15 @@ var ListAgentsResponseExample = types.SuccessEnvelope{
 // listLinksSelectedExample mirrors ListLinksExample but carries the active
 // `fields` selection in each URL.
 var listLinksSelectedExample = types.ListLinks{
-	Self:     "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.call_direction",
-	First:    "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.call_direction",
+	Self:     "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.name",
+	First:    "/v1/agents?page=1&limit=20&fields=id,agent.status,agent.language,agent.name",
 	Previous: nil,
-	Next:     strptr("/v1/agents?page=2&limit=20&fields=id,agent.status,agent.language,agent.call_direction"),
-	Last:     "/v1/agents?page=3&limit=20&fields=id,agent.status,agent.language,agent.call_direction",
+	Next:     strptr("/v1/agents?page=2&limit=20&fields=id,agent.status,agent.language,agent.name"),
+	Last:     "/v1/agents?page=3&limit=20&fields=id,agent.status,agent.language,agent.name",
 }
 
 // ListAgentsSelectedFieldsExample is the 200 envelope returned by GET /v1/agents
-// with `fields=id,agent.status,agent.language,agent.call_direction`: each resource is
+// with `fields=id,agent.status,agent.language,agent.name`: each resource is
 // trimmed to exactly the requested (dot-notation) fields.
 var ListAgentsSelectedFieldsExample = types.SuccessEnvelope{
 	Success: true,
@@ -53,9 +53,9 @@ var ListAgentsSelectedFieldsExample = types.SuccessEnvelope{
 		{
 			"id": "agent_12345",
 			"agent": map[string]any{
-				"status":         "active",
-				"language":       "en-US",
-				"call_direction": "outbound",
+				"status":   "active",
+				"language": "en-US",
+				"name":     "My Agent",
 			},
 		},
 	},

@@ -16,13 +16,16 @@ func buildUpdateAgentResponseExample() types.SuccessEnvelope {
 		Language:      "en-US",
 		Timezone:      &tz,
 		PhoneNumberID: nil,
-		CallDirection: "outbound",
 		Status:        "active",
 	}
-	config.Model = &types.ModelSection{
-		Provider:    "openai",
-		Name:        "gpt-4.1-mini",
-		Temperature: 0.4,
+	config.Voice = &types.VoiceSection{
+		OpenAI: &types.OpenAIVoice{
+			VoiceID:       "marin",
+			VoiceName:     "Marin",
+			RealtimeModel: "gpt-realtime-2.1-mini",
+			Speed:         1,
+			Volume:        1,
+		},
 	}
 
 	resource := types.AgentResource{

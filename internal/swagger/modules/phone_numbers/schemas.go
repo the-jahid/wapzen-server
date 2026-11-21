@@ -88,7 +88,7 @@ func createPhoneNumberRequestSchema() oas.Object {
 
 func phoneNumberLinksSchema() *oas.Schema {
 	return oas.Obj().Desc("Resource links.").
-		P("self", oas.Str().Desc("Canonical URL of this resource.").Example("/v1/phone-number/phone_number_12345"))
+		P("self", oas.Str().Desc("Canonical URL of this resource.").Example("/v1/voice/phone-number/phone_number_12345"))
 }
 
 func loginPhoneNumberResponseSchema() oas.Object {

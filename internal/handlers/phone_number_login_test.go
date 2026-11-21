@@ -9,7 +9,7 @@ import (
 
 func decodeLoginBody(t *testing.T, body string) (loginPhoneNumberRequest, *httptest.ResponseRecorder, bool) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/v1/phone-number/login", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice/phone-number/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	decoded, ok := decodeLoginPhoneNumberRequest(resp, req)

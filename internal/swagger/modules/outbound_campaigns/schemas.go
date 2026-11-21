@@ -100,7 +100,7 @@ func updateOutboundCampaignRequestSchema() oas.Object {
 // endpoint.
 func outboundCampaignSchema() oas.Object {
 	return oas.Obj().
-		Desc("An outbound calling campaign owned by the authenticated API key owner. Its counters advance as the calls it places are answered and end; GET /v1/outbound-campaigns/{campaign_id}/analytics breaks the same activity down by status, by day, and by talk time.").
+		Desc("An outbound calling campaign owned by the authenticated user. Its counters advance as the calls it places are answered and end; GET /v1/outbound-campaigns/{campaign_id}/analytics breaks the same activity down by status, by day, and by talk time.").
 		Req("campaign_id", "campaign_name", "status", "leads_count", "calls_placed", "answered_calls",
 			"successful_calls", "today_calls", "total_usage_seconds", "created_at", "updated_at").
 		P("campaign_id", oas.Str().Desc("Unique identifier of the campaign.").Example("campaign_a456426614174000")).

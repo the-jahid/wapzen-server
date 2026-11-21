@@ -113,10 +113,6 @@ func toolSchema() oas.Object {
 				"attach a tool by writing that agent's `tools.tool_ids`. A tool is shared, so the same one can be "+
 				"attached to any number of agents; deleting an agent detaches it rather than deleting it.").
 			Default([]string{})).
-		P("chat_agent_ids", oas.Arr(oas.Str().Example("chat_agent_12345")).
-			Desc("Chat agents this tool is attached to, on the same terms as agent_ids. Only api_request and "+
-				"send_text tools do anything in a chat.").
-			Default([]string{})).
 		P("api_request", oas.Ref("ToolAPIRequestConfig")).
 		P("transfer_call", oas.Ref("ToolTransferCallConfig")).
 		P("send_text", oas.Ref("ToolSendTextConfig")).
@@ -171,7 +167,7 @@ func createToolResponseSchema() oas.Object {
 		P("success", oas.Bool().Example(true)).
 		P("message", oas.Str().Example("Tool created successfully")).
 		P("data", oas.Ref("Tool")).
-		P("links", oas.Obj().P("self", oas.Str().Example("/v1/tools/tool_12345"))).
+		P("links", oas.Obj().P("self", oas.Str().Example("/v1/voice/tools/tool_12345"))).
 		Build()
 }
 
@@ -180,7 +176,7 @@ func toolResponseSchema() oas.Object {
 		P("success", oas.Bool().Example(true)).
 		P("message", oas.Str().Example("Tool retrieved successfully")).
 		P("data", oas.Ref("Tool")).
-		P("links", oas.Obj().P("self", oas.Str().Example("/v1/tools/tool_12345"))).
+		P("links", oas.Obj().P("self", oas.Str().Example("/v1/voice/tools/tool_12345"))).
 		Build()
 }
 
@@ -199,11 +195,11 @@ func paginationMetaSchema() *oas.Schema {
 
 func listLinksSchema() *oas.Schema {
 	return oas.Obj().Desc("Pagination links as query URLs.").
-		P("self", oas.Str().Example("/v1/tools?page=1&limit=50")).
-		P("first", oas.Str().Example("/v1/tools?page=1&limit=50")).
+		P("self", oas.Str().Example("/v1/voice/tools?page=1&limit=50")).
+		P("first", oas.Str().Example("/v1/voice/tools?page=1&limit=50")).
 		P("previous", oas.Str().Nullable().Desc("Previous page URL, or null on the first page.").Example(nil)).
 		P("next", oas.Str().Nullable().Desc("Next page URL, or null on the last page.").Example(nil)).
-		P("last", oas.Str().Example("/v1/tools?page=1&limit=50"))
+		P("last", oas.Str().Example("/v1/voice/tools?page=1&limit=50"))
 }
 
 func toolListResponseSchema() oas.Object {

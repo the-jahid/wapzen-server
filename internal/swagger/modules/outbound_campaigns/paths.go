@@ -45,7 +45,7 @@ func errJSON(desc string, example any) oas.Object {
 }
 
 func resp401() oas.Object {
-	return errJSON("Unauthorized - missing or invalid API key bearer token.", unauthorizedErrorExample())
+	return errJSON("Unauthorized - missing or invalid bearer token.", unauthorizedErrorExample())
 }
 
 func resp404() oas.Object {
@@ -84,8 +84,8 @@ func requestBodyNamedExamples(desc, schemaName string, named oas.Object) oas.Obj
 	}
 }
 
-func apiKeySecurity() []any {
-	return []any{oas.Object{"apiKeyBearer": []any{}}}
+func bearerSecurity() []any {
+	return []any{oas.Object{"bearer": []any{}}}
 }
 
 func campaignIDParam() oas.Object {
@@ -139,8 +139,8 @@ func listOutboundCampaignsOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "listOutboundCampaigns",
 		"summary":     "List Outbound Campaigns",
-		"description": "Returns a paginated list of the outbound campaigns owned by the authenticated API key owner, newest first, each with its current counters.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a paginated list of the outbound campaigns owned by the authenticated user, newest first, each with its current counters.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{pageParam(), limitParam(), statusParam()},
 		"responses": oas.Object{
 			"200": okJSON("A page of outbound campaigns.", "ListOutboundCampaignsResponse", listOutboundCampaignsResponseExample()),
@@ -157,8 +157,8 @@ func createOutboundCampaignOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "createOutboundCampaign",
 		"summary":     "Create Outbound Campaign",
-		"description": "Creates an outbound campaign owned by the authenticated API key owner. `campaign_name` is the only required field and must be unique among the owner's campaigns. The campaign is created at status `draft` with every counter at zero and no leads; omitting `budget_usd` leaves it uncapped. `agent_id` is optional here and may be added later, but a campaign cannot be started without one — it must name one of the owner's agents that already has a phone number assigned, and the campaign dials from that agent's number rather than from a number of its own. Nothing is dialled by this call.",
-		"security":    apiKeySecurity(),
+		"description": "Creates an outbound campaign owned by the authenticated user. `campaign_name` is the only required field and must be unique among the owner's campaigns. The campaign is created at status `draft` with every counter at zero and no leads; omitting `budget_usd` leaves it uncapped. `agent_id` is optional here and may be added later, but a campaign cannot be started without one — it must name one of the owner's agents that already has a phone number assigned, and the campaign dials from that agent's number rather than from a number of its own. Nothing is dialled by this call.",
+		"security":    bearerSecurity(),
 		"requestBody": requestBodyNamedExamples("The campaign to create. Only `campaign_name` is required.", "CreateOutboundCampaignRequest", oas.Object{
 			"minimal": oas.Object{
 				"summary": "Minimal: only the required campaign_name",
@@ -185,8 +185,8 @@ func getOutboundCampaignOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "getOutboundCampaign",
 		"summary":     "Get Outbound Campaign",
-		"description": "Returns a single outbound campaign by id, scoped to the authenticated API key owner, with its counters and the `pickup_rate` and `success_rate` derived from them. Both rates are 0 on a campaign that has placed no calls rather than undefined.",
-		"security":    apiKeySecurity(),
+		"description": "Returns a single outbound campaign by id, scoped to the authenticated user, with its counters and the `pickup_rate` and `success_rate` derived from them. Both rates are 0 on a campaign that has placed no calls rather than undefined.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{campaignIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The requested campaign resource.", "GetOutboundCampaignResponse", getOutboundCampaignResponseExample()),
@@ -204,8 +204,8 @@ func updateOutboundCampaignOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "updateOutboundCampaign",
 		"summary":     "Update Outbound Campaign",
-		"description": "Applies a partial update to a campaign owned by the authenticated API key owner. Only `campaign_name`, `status`, `budget_usd` and `agent_id` may be changed; at least one field must be supplied and omitted fields keep their stored value. Send `budget_usd: null` to remove a spend cap, or `agent_id: null` to detach the agent — omitting either field keeps the stored value instead. `agent_id` must name one of the owner's agents that has a phone number assigned; `phone_number_id` and `phone_number` are read back from that agent and are rejected if supplied. Status is how a campaign is started, paused and resumed: `draft` and `paused` may move to `running`, `running` may move to `paused` or `completed`, and the terminal statuses `completed` and `failed` may not move at all. A `running` campaign must have an agent, so starting one without an agent — or detaching the agent of a running one — is refused with 409. The counters are maintained by the server and are rejected if supplied.",
-		"security":    apiKeySecurity(),
+		"description": "Applies a partial update to a campaign owned by the authenticated user. Only `campaign_name`, `status`, `budget_usd` and `agent_id` may be changed; at least one field must be supplied and omitted fields keep their stored value. Send `budget_usd: null` to remove a spend cap, or `agent_id: null` to detach the agent — omitting either field keeps the stored value instead. `agent_id` must name one of the owner's agents that has a phone number assigned; `phone_number_id` and `phone_number` are read back from that agent and are rejected if supplied. Status is how a campaign is started, paused and resumed: `draft` and `paused` may move to `running`, `running` may move to `paused` or `completed`, and the terminal statuses `completed` and `failed` may not move at all. A `running` campaign must have an agent, so starting one without an agent — or detaching the agent of a running one — is refused with 409. The counters are maintained by the server and are rejected if supplied.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{campaignIDParam()},
 		"requestBody": requestBodyNamedExamples("The fields to change. At least one is required.", "UpdateOutboundCampaignRequest", oas.Object{
 			"assignAgent": oas.Object{
@@ -242,8 +242,8 @@ func deleteOutboundCampaignOperation() oas.Object {
 		"tags":        []any{tagName},
 		"operationId": "deleteOutboundCampaign",
 		"summary":     "Delete Outbound Campaign",
-		"description": "Deletes a campaign by id, scoped to the authenticated API key owner, together with its counters. A running campaign is refused rather than deleted mid-flight: pause it first. Calls the campaign has already placed are not deleted — they remain in the call history.",
-		"security":    apiKeySecurity(),
+		"description": "Deletes a campaign by id, scoped to the authenticated user, together with its counters. A running campaign is refused rather than deleted mid-flight: pause it first. Calls the campaign has already placed are not deleted — they remain in the call history.",
+		"security":    bearerSecurity(),
 		"parameters":  []any{campaignIDParam()},
 		"responses": oas.Object{
 			"200": okJSON("The campaign was deleted.", "DeleteOutboundCampaignResponse", deleteOutboundCampaignResponseExample()),
