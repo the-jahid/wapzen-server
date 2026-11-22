@@ -35,6 +35,13 @@ const callRecordTimeout = 5 * time.Second
 // inbound media never arrives with silence. This is the compromise.
 const outboundMediaGrace = 1500 * time.Millisecond
 
+// outboundRingTimeout hangs up an outbound call nobody accepted in time.
+// WhatsApp stops ringing well before this and sends a terminate; this catches
+// the call whose terminate never arrived (the socket dropped while it rang),
+// which would otherwise stream silence to the relay forever: the watchdog only
+// starts once a call is live.
+const outboundRingTimeout = 90 * time.Second
+
 // defaultAnswerWaitMS is how long an inbound call may keep ringing while its
 // Realtime session connects. Past it the call is answered anyway; the caller's
 // first words are buffered until the session is up.
@@ -1042,6 +1049,19 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		// here the call runs entirely on its lifecycle callbacks, which is why this
 		// returns while the call is still live.
 		log.Printf("voicecall: outbound call %s is ringing %s", call.ID(), peerAddress(call))
+		time.AfterFunc(outboundRingTimeout, func() {
+			liveMu.Lock()
+			accepted := callAccepted
+			liveMu.Unlock()
+			if accepted || callEnded.Load() {
+				return
+			}
+			log.Printf("voicecall: outbound call %s not accepted within %s; hanging up", call.ID(), outboundRingTimeout)
+			failureReason.Store("no answer within " + outboundRingTimeout.String())
+			if err := call.Hangup(); err != nil {
+				log.Printf("voicecall: call %s could not be hung up: %v", call.ID(), err)
+			}
+		})
 		return nil
 	}
 

@@ -183,10 +183,20 @@ func main() {
 	log.Printf("Swagger UI at  http://localhost%s/swagger/index.html", addr)
 	activity.Printf("server started")
 
-	server := &http.Server{Addr: addr, Handler: router}
+	startPprof()
+
+	// Header and idle limits only: knowledge base uploads can take longer than
+	// any whole-request deadline that would still be useful.
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// systemd waits 30 s (TimeoutStopSec) before SIGKILL.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("server shutdown failed: %v", err)
