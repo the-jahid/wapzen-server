@@ -50,11 +50,11 @@ func promptSectionSchema() *oas.Schema {
 }
 
 func voiceSectionSchema() *oas.Schema {
-	return oas.Obj().Desc("Live-call voice. Every call runs on one OpenAI Realtime speech-to-speech session.").
-		P("openai", oas.Obj().Desc("OpenAI Realtime voice selection.").
-			P("voice_id", oas.Str().Desc("Realtime voice used for calls.").Enum(constants.OpenAIVoiceOptions).Default("alloy").Example("alloy")).
-			P("voice_name", oas.Str().Desc("Human-friendly display name of the selected voice.").Default("Alloy").Example("Alloy")).
-			P("realtime_model", oas.Str().Desc("Speech-to-speech model that hears, thinks and speaks on the call.").Enum(constants.OpenAIRealtimeModelOptions).Default("gpt-realtime-2.1-mini").Example("gpt-realtime-2.1-mini")).
+	return oas.Obj().Desc("Live-call voice. Every call runs on one speech-to-speech session: Google Gemini Live for a gemini-* model (the default), OpenAI Realtime otherwise.").
+		P("openai", oas.Obj().Desc("Realtime voice selection (Gemini Live or OpenAI Realtime).").
+			P("voice_id", oas.Str().Desc("Realtime voice used for calls.").Enum(constants.OpenAIVoiceOptions).Default(constants.DefaultVoiceID).Example(constants.DefaultVoiceID)).
+			P("voice_name", oas.Str().Desc("Human-friendly display name of the selected voice.").Default(constants.DefaultVoiceName).Example(constants.DefaultVoiceName)).
+			P("realtime_model", oas.Str().Desc("Speech-to-speech model that hears, thinks and speaks on the call.").Enum(constants.OpenAIRealtimeModelOptions).Default(constants.DefaultRealtimeModel).Example(constants.DefaultRealtimeModel)).
 			P("speed", oas.Num().Desc("Spoken rate; 1 is the model's normal pace.").Min(0.25).Max(1.5).Default(1).Example(1)).
 			P("volume", oas.Num().Desc("Playback gain applied to the agent's audio; 1 leaves it unchanged.").Min(0).Max(2).Default(1).Example(1)))
 }

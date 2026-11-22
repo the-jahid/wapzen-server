@@ -114,15 +114,18 @@ func insertColumns(userID string, req types.CreateAgentRequest) columnSet {
 		addNonZero(&s, "prompt_system_prompt", p.SystemPrompt)
 	}
 
+	var voiceID, voiceName, model string
 	if v := req.Voice; v != nil {
 		if oa := v.OpenAI; oa != nil {
-			addNonZero(&s, "voice_openai_voice_id", oa.VoiceID)
-			addNonZero(&s, "voice_openai_voice_name", oa.VoiceName)
-			addNonZero(&s, "voice_openai_realtime_model", oa.RealtimeModel)
+			voiceID, voiceName, model = oa.VoiceID, oa.VoiceName, oa.RealtimeModel
 			addNonZero(&s, "voice_openai_speed", oa.Speed)
 			addNonZero(&s, "voice_openai_volume", oa.Volume)
 		}
 	}
+	voiceID, voiceName, model = defaultVoiceChoice(voiceID, voiceName, model)
+	s.add("voice_openai_voice_id", voiceID)
+	s.add("voice_openai_voice_name", voiceName)
+	s.add("voice_openai_realtime_model", model)
 
 	if pc := req.PostCall; pc != nil {
 		addNonZero(&s, "post_call_analysis_provider", pc.AnalysisProvider)

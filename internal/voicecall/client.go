@@ -73,7 +73,9 @@ type CallStore interface {
 // reads credentials once; Attach wires the handler onto each per-number
 // whatsmeow client the login Manager creates.
 type Client struct {
-	openAI    openAIRealtimeConfig
+	openAI openAIRealtimeConfig
+	// gemini runs calls whose agent picked a Gemini Live model.
+	gemini    geminiLiveConfig
 	diag      *callerdiag.Recorder
 	recordDir string
 
@@ -235,17 +237,19 @@ type CallAgent struct {
 }
 
 // New builds a voice-call client from the environment, or returns nil when
-// OpenAI Realtime has no credentials (or is switched off).
+// neither OpenAI Realtime nor Gemini Live has credentials (or is switched off).
 // A nil *Client is inert: the Manager simply never attaches a call handler, and
 // every method below is safe to call on it.
 func New() *Client {
 	openAI := loadOpenAIRealtimeConfig()
-	if !openAI.Enabled() {
+	gemini := loadGeminiLiveConfig()
+	if !openAI.Enabled() && !gemini.Enabled() {
 		return nil
 	}
 
 	c := &Client{
 		openAI:                  openAI,
+		gemini:                  gemini,
 		recordDir:               strings.TrimSpace(os.Getenv("VOICECALL_RECORD_DIR")),
 		active:                  make(map[string]bool),
 		live:                    make(map[string]liveCall),
@@ -267,7 +271,12 @@ func New() *Client {
 		}
 	}
 
-	log.Printf("voicecall: OpenAI Realtime configured model=%s voice=%s", c.openAI.RealtimeModel, c.openAI.Voice)
+	if openAI.Enabled() {
+		log.Printf("voicecall: OpenAI Realtime configured model=%s voice=%s", c.openAI.RealtimeModel, c.openAI.Voice)
+	}
+	if gemini.Enabled() {
+		log.Printf("voicecall: Gemini Live configured model=%s voice=%s", c.gemini.Model, c.gemini.Voice)
+	}
 	return c
 }
 
@@ -628,6 +637,7 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 	// to the peer) are owned by the playback and lifecycle machinery further
 	// down this function.
 	controls := &liveCallControls{call: call}
+	agentVoice := ""
 	var toolbox *combinedToolbox
 	inlineKnowledge := ""
 	if agent != nil {
@@ -670,11 +680,15 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		if beginMessageMode != "" {
 			log.Printf("voicecall: call %s begin_message_mode=%s", call.ID(), beginMessageMode)
 		}
-		if voice := strings.TrimSpace(agent.Voice); voice != "" {
-			openAICfg.Voice = normalizeOpenAIRealtimeVoice(voice)
+		agentVoice = strings.TrimSpace(agent.Voice)
+		if agentVoice != "" {
+			openAICfg.Voice = normalizeOpenAIRealtimeVoice(agentVoice)
 		}
 		if model := strings.TrimSpace(agent.RealtimeModel); model != "" {
 			openAICfg.RealtimeModel = model
+		} else if c.gemini.Enabled() {
+			// No model saved: Gemini Live is the default engine.
+			openAICfg.RealtimeModel = c.gemini.Model
 		}
 		openAICfg.Language = strings.TrimSpace(agent.Language)
 		if agent.Speed > 0 {
@@ -740,7 +754,7 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 
 	// Assigned once the bridge exists, below; the closures that read it only
 	// run after that.
-	var voiceBridge *openAIRealtimeVoiceBridge
+	var voiceBridge voiceSession
 
 	stopPlayer := func() {
 		playerMu.Lock()
@@ -935,10 +949,7 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 		}
 	}
 
-	log.Printf("voicecall: call %s using OpenAI Realtime model=%q voice=%q language=%q", call.ID(), openAICfg.RealtimeModel, openAICfg.Voice, openAICfg.Language)
-	voiceBridge = newOpenAIRealtimeVoiceBridgeWithHooks(openAICfg, func(source meowcaller.AudioSource) {
-		playSource(source, "OpenAI Realtime response")
-	}, stopPlayer, bridgeHooks{
+	hooks := bridgeHooks{
 		onCallerSpeech: watchdog.callerSpoke,
 		onFailure: func(err error) {
 			if callEnded.Load() || !hangupOnFailure.Load() {
@@ -952,7 +963,24 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 				log.Printf("voicecall: call %s could not be hung up: %v", call.ID(), hangupErr)
 			}
 		},
-	})
+	}
+	if c.useGemini(openAICfg.RealtimeModel) {
+		geminiCfg := c.geminiCallConfig(openAICfg, agentVoice)
+		log.Printf("voicecall: call %s using Gemini Live model=%q voice=%q language=%q", call.ID(), geminiCfg.Model, geminiCfg.Voice, openAICfg.Language)
+		voiceBridge = newGeminiLiveBridge(geminiCfg, func(source meowcaller.AudioSource) {
+			playSource(source, "Gemini Live response")
+		}, stopPlayer, hooks)
+	} else {
+		if isGeminiModel(openAICfg.RealtimeModel) {
+			// The agent picked Gemini but this server has no Gemini key.
+			log.Printf("voicecall: call %s: agent model %q needs GEMINI_API_KEY; using OpenAI Realtime %q instead", call.ID(), openAICfg.RealtimeModel, c.openAI.RealtimeModel)
+			openAICfg.RealtimeModel = c.openAI.RealtimeModel
+		}
+		log.Printf("voicecall: call %s using OpenAI Realtime model=%q voice=%q language=%q", call.ID(), openAICfg.RealtimeModel, openAICfg.Voice, openAICfg.Language)
+		voiceBridge = newOpenAIRealtimeVoiceBridgeWithHooks(openAICfg, func(source meowcaller.AudioSource) {
+			playSource(source, "OpenAI Realtime response")
+		}, stopPlayer, hooks)
+	}
 	// The bridge is the one sink that needs the caller's pauses delivered as
 	// audio rather than as a gap in the stream: the Realtime VAD decides the turn
 	// is over by how much silence it has heard.

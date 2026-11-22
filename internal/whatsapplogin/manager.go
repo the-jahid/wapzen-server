@@ -104,7 +104,10 @@ type Manager struct {
 	repo       phoneNumberRepository
 	agentsRepo *agents.Repository
 	container  *sqlstore.Container
-	voice      *voicecall.Client
+	// storeDB is the WhatsApp device store's connection pool, used to write a
+	// new device's prekeys in one batch (see batchPreKeyStore).
+	storeDB *sql.DB
+	voice   *voicecall.Client
 
 	// usage reads the owner's remaining voice minutes before each call. Nil
 	// (see UseVoiceUsage) applies no minute limit.
@@ -370,20 +373,21 @@ func NewManager(ctx context.Context, databaseURL string, repo *phonenumbers.Repo
 	if voice != nil {
 		voice.UseCallStore(callsStore)
 		voice.UseKnowledgeRetriever(knowledgeRetriever)
-		log.Println("voicecall: incoming-call auto-answer enabled (OpenAI Realtime)")
+		log.Println("voicecall: incoming-call auto-answer enabled (OpenAI Realtime / Gemini Live)")
 		if voice.CanRetrieveKnowledge() {
 			log.Println("voicecall: in-call knowledge base retrieval enabled for agents with knowledge bases attached")
 		} else {
 			log.Println("voicecall: in-call knowledge base retrieval disabled (set OPENAI_API_KEY, PINECONE_API_KEY and PINECONE_INDEX_HOST to enable it)")
 		}
 	} else {
-		log.Println("voicecall: incoming-call auto-answer disabled (set OPENAI_API_KEY to enable)")
+		log.Println("voicecall: incoming-call auto-answer disabled (set OPENAI_API_KEY or GEMINI_API_KEY to enable)")
 	}
 
 	return &Manager{
 		repo:       repo,
 		agentsRepo: agentsRepo,
 		container:  container,
+		storeDB:    sqlDB,
 		voice:      voice,
 		sessions:   make(map[string]*loginSession),
 		userStarts: make(map[string]*sync.Mutex),
@@ -940,6 +944,7 @@ func (m *Manager) startSession(ctx context.Context, row models.PhoneNumber, assi
 		}
 		return row, err
 	}
+	useBatchPreKeys(m.storeDB, device)
 	client := whatsmeow.NewClient(device, newWhatsAppLogger(userID, row.ID))
 	// recoverDroppedSession reconnects instead (see there).
 	client.EnableAutoReconnect = false
@@ -1835,6 +1840,12 @@ func (s *loginSession) paired() bool {
 func (m *Manager) handleEvent(session *loginSession, evt any) {
 	switch v := evt.(type) {
 	case *events.PairSuccess:
+		// Pairing just saved the device and rebuilt its stores; put the batching
+		// prekey store back in front before the post-pair reconnect uploads the
+		// first 812 prekeys, which would otherwise take minutes on a far database.
+		if session.client != nil {
+			useBatchPreKeys(m.storeDB, session.client.Store)
+		}
 		log.Printf("whatsapp login: pair success phone_number_id=%s wa_jid=%s", session.phoneNumberID, v.ID.String())
 		m.recordPairing(session, v.ID)
 	case *events.Connected:
@@ -2156,6 +2167,7 @@ func (m *Manager) clientFromStoredDevice(ctx context.Context, row models.PhoneNu
 		return nil, nil
 	}
 
+	useBatchPreKeys(m.storeDB, device)
 	client := whatsmeow.NewClient(device, newWhatsAppLogger(row.UserID, row.ID))
 	// recoverDroppedSession reconnects instead (see there).
 	client.EnableAutoReconnect = false

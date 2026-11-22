@@ -34,7 +34,8 @@ func TestServiceCreateRequiresName(t *testing.T) {
 
 // TestInsertColumnsWritesOnlySuppliedFields pins the create mapping: user_id and
 // agent_name always, everything else only when the request carries a value, so
-// the schema defaults apply to the rest.
+// the schema defaults apply to the rest — except the voice, which is always
+// written (Gemini 3.8 Live + Zephyr unless the request picks one).
 func TestInsertColumnsWritesOnlySuppliedFields(t *testing.T) {
 	req := types.CreateAgentRequest{
 		Agent: &types.AgentSection{Name: "Jarvis", PhoneNumberID: ptr(" phone_1 "), Status: "inactive"},
@@ -42,13 +43,37 @@ func TestInsertColumnsWritesOnlySuppliedFields(t *testing.T) {
 	}
 	got := insertColumns("user_1", req)
 
-	wantCols := []string{"user_id", "agent_name", "phone_number_id", "status", "voice_openai_speed"}
-	wantArgs := []any{"user_1", "Jarvis", ptr("phone_1"), "inactive", 1.2}
+	wantCols := []string{"user_id", "agent_name", "phone_number_id", "status", "voice_openai_speed",
+		"voice_openai_voice_id", "voice_openai_voice_name", "voice_openai_realtime_model"}
+	wantArgs := []any{"user_1", "Jarvis", ptr("phone_1"), "inactive", 1.2, "zephyr", "Zephyr", "gemini-3.8-live"}
 	if !reflect.DeepEqual(got.cols, wantCols) {
 		t.Errorf("cols = %#v, want %#v", got.cols, wantCols)
 	}
 	if !reflect.DeepEqual(got.args, wantArgs) {
 		t.Errorf("args = %#v, want %#v", got.args, wantArgs)
+	}
+}
+
+// TestDefaultVoiceChoice: nothing picked = Gemini 3.8 Live + Zephyr; half a
+// choice is completed from the same engine.
+func TestDefaultVoiceChoice(t *testing.T) {
+	cases := []struct {
+		inID, inName, inModel string
+		id, name, model       string
+	}{
+		{"", "", "", "zephyr", "Zephyr", "gemini-3.8-live"},
+		{"kore", "", "", "kore", "Kore", "gemini-3.8-live"},
+		{"alloy", "Alloy", "", "alloy", "Alloy", "gpt-realtime-2.1-mini"},
+		{"", "", "gpt-realtime-2.1", "echo", "Echo", "gpt-realtime-2.1"},
+		{"", "", "gemini-3.1-flash-live-preview", "zephyr", "Zephyr", "gemini-3.1-flash-live-preview"},
+		{"marin", "Marin", "gpt-realtime-2", "marin", "Marin", "gpt-realtime-2"},
+	}
+	for _, c := range cases {
+		id, name, model := defaultVoiceChoice(c.inID, c.inName, c.inModel)
+		if id != c.id || name != c.name || model != c.model {
+			t.Errorf("defaultVoiceChoice(%q, %q, %q) = %q, %q, %q; want %q, %q, %q",
+				c.inID, c.inName, c.inModel, id, name, model, c.id, c.name, c.model)
+		}
 	}
 }
 
