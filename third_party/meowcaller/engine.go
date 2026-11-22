@@ -470,13 +470,17 @@ func (e *engine) hangup(c *Call) error {
 	}
 	term := signaling.BuildTerminate(&signaling.TerminateParams{CallID: c.id, To: to, CallCreator: creator})
 	term.Attrs["id"] = e.c.wa.GenerateMessageID()
-	if err := e.c.wa.DangerousInternals().SendNode(context.Background(), term); err != nil {
-		return fmt.Errorf("send terminate: %w", err)
-	}
+	sendErr := e.c.wa.DangerousInternals().SendNode(context.Background(), term)
+	// A terminate that can't be sent (the socket is down) must still end the call
+	// here: otherwise its media loop runs on forever and nothing can stop it.
 	e.stopMedia(c.id)
 	c.setPhase(CallPhaseEnded)
 	if fn := c.onEndFn(); fn != nil {
 		fn("hangup")
+	}
+	if sendErr != nil {
+		e.c.log.Warn().Err(sendErr).Str("call_id", c.id).Msg("terminate not sent, call torn down locally")
+		return fmt.Errorf("send terminate: %w", sendErr)
 	}
 	return nil
 }

@@ -137,7 +137,20 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
 	if err != nil {
 		return err
 	}
-	defer ch.Close()
+	closeCh := sync.OnceFunc(func() { _ = ch.Close() })
+	defer closeCh()
+	// The receive loop below blocks in ch.Recv, which a cancelled ctx alone never
+	// wakes; closing the channel does, so a stopped call releases its relay stack
+	// even when the relay has gone quiet.
+	recvDone := make(chan struct{})
+	defer close(recvDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			closeCh()
+		case <-recvDone:
+		}
+	}()
 
 	// Send a consent ping (0x0801) immediately, together with the allocate and BEFORE any
 	// RTP. The relay won't forward the peer's media until consent (ping → pong) is
@@ -269,11 +282,13 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
 			if err != nil {
 				continue
 			}
-			e.c.diag.Emit("media_out", map[string]any{
-				"frame": txCount, "frame_samples": len(frame), "pcm_rms": rmsFloat32(frame),
-				"payload_len": len(payload), "payload_hex": hex.EncodeToString(payload),
-				"packet_len": len(packet), "packet_hex": hex.EncodeToString(packet),
-			})
+			if e.c.diag != nil {
+				e.c.diag.Emit("media_out", map[string]any{
+					"frame": txCount, "frame_samples": len(frame), "pcm_rms": rmsFloat32(frame),
+					"payload_len": len(payload), "payload_hex": hex.EncodeToString(payload),
+					"packet_len": len(packet), "packet_hex": hex.EncodeToString(packet),
+				})
+			}
 			if _, err := ch.Send(packet); err != nil {
 				return
 			}
@@ -340,10 +355,12 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
 		relayRx.Add(1)
 		pkt := buf[:n]
 		isRTP := relay.ClassifyRelayPacket(pkt) == relay.RelayPacketRtp
-		e.c.diag.Emit("relay", map[string]any{
-			"event": "packet_in", "bytes": n, "is_rtp": isRTP,
-			"packet_hex": hex.EncodeToString(pkt),
-		})
+		if e.c.diag != nil {
+			e.c.diag.Emit("relay", map[string]any{
+				"event": "packet_in", "bytes": n, "is_rtp": isRTP,
+				"packet_hex": hex.EncodeToString(pkt),
+			})
+		}
 		if !isRTP {
 			mt, isStun := stun.StunMessageType(pkt)
 			if isStun && mt == stun.MsgBindingRequest {
@@ -401,19 +418,23 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
 			e.c.diag.Emit("srtp", map[string]any{"event": "unprotect_failed", "bytes": n})
 			continue
 		}
-		e.c.diag.Emit("rtp", map[string]any{
-			"event": "in", "ssrc": hdr.Ssrc, "seq": hdr.SequenceNumber,
-			"ts": hdr.Timestamp, "pt": hdr.PayloadType, "marker": hdr.Marker,
-		})
-		e.c.diag.Emit("srtp", map[string]any{
-			"event": "frame_unprotected", "ssrc": hdr.Ssrc, "seq": hdr.SequenceNumber,
-			"payload_len": len(payload), "payload_hex": hex.EncodeToString(payload),
-		})
+		if e.c.diag != nil {
+			e.c.diag.Emit("rtp", map[string]any{
+				"event": "in", "ssrc": hdr.Ssrc, "seq": hdr.SequenceNumber,
+				"ts": hdr.Timestamp, "pt": hdr.PayloadType, "marker": hdr.Marker,
+			})
+			e.c.diag.Emit("srtp", map[string]any{
+				"event": "frame_unprotected", "ssrc": hdr.Ssrc, "seq": hdr.SequenceNumber,
+				"payload_len": len(payload), "payload_hex": hex.EncodeToString(payload),
+			})
+		}
 		frame := dec.Decode(payload)
-		e.c.diag.Emit("media_in", map[string]any{
-			"seq": hdr.SequenceNumber, "samples": len(frame),
-			"pcm_rms": rmsFloat32(frame), "payload_len": len(payload),
-		})
+		if e.c.diag != nil {
+			e.c.diag.Emit("media_in", map[string]any{
+				"seq": hdr.SequenceNumber, "samples": len(frame),
+				"pcm_rms": rmsFloat32(frame), "payload_len": len(payload),
+			})
+		}
 		if _, sink := callPlayerSink(call); sink != nil {
 			_ = sink.WriteFrame(frame)
 		}

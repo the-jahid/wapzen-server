@@ -7,6 +7,33 @@ All notable changes to meowcaller, tracked per module. Format loosely follows
 
 ## [Unreleased]
 
+### mlow — encoder 2.6x faster, output bit-identical
+- `fftRec` read its twiddle factors from `math.Cos`/`math.Sin` on every call;
+  they are now built once per (length, radix, direction) with the same float32
+  angle expression and cached (`primeTwiddles`, `stageTwiddles`). Its per-level
+  sub-transform buffers come from one pooled 2n scratch, and the real-FFT
+  wrappers' buffers from the same pool.
+- `smplFcbSearchDeldec` keeps its search scratch on the `CelpEncoder` and zeroes
+  it per subframe instead of allocating it per subframe.
+- Encode, one 60 ms frame: 3.12 ms / 1.59 MB / 3,738 allocs before, 1.18 ms /
+  0.42 MB / 969 allocs after. Decode unchanged (~60 µs).
+- `KAT-verified`: every mlow KAT passes against the upstream `testdata/`
+  vectors, and the new `TestEncodeDecodeBitExact` pins the SHA-256 of 240 frames
+  of encoder payloads plus decoded PCM, captured before the change.
+
+### meowcaller — a hung-up call always stops its media
+- `hangup` tore the call down only after the terminate stanza was sent. With the
+  WhatsApp socket down that send fails, and the call's media loop (MLow encode +
+  SRTP + relay send, every frame) ran on forever with nothing able to stop it.
+  It now stops media and fires `OnEnd` either way, then returns the send error.
+- `runMedia` closes the relay channel when its context is cancelled. The receive
+  loop blocks in `Recv`, which cancellation alone never woke, so a stopped call
+  held its UDP/DTLS/SCTP stack open while the relay stayed quiet.
+- Per-packet and per-frame diagnostics (`relay` packet_in, `rtp`, `srtp`,
+  `media_in`, `media_out`) are only built when a recorder is attached; with
+  diagnostics off they still hex-encoded every packet and allocated a map.
+- `implemented` (live-call paths, no vector).
+
 ### meowcaller — report only the relay media binds to
 - `reportRelayLatency` now sends a single `<relaylatency>` for the endpoint
   `getMediaRelayEndpoint` binds to, instead of one per candidate relay.
