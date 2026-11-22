@@ -555,6 +555,11 @@ type CelpEncoder struct {
 	impLpcBuf []float32
 	phi       []float32
 	phiFlip   []float32
+
+	// fcbScratch and fcbBest are smplFcbSearchDeldec's working state, kept
+	// between subframes and zeroed at the start of each search.
+	fcbScratch *fcbSearchScratch
+	fcbBest    [smplCelpMaxRates]fcbState
 }
 
 // NewCelpEncoder builds the encoder (mirrors CelpEncoder::new).
@@ -741,6 +746,42 @@ func newFcbSearchScratch() *fcbSearchScratch {
 
 func (sc *fcbSearchScratch) swapRw() { sc.readIdx, sc.writeIdx = sc.writeIdx, sc.readIdx }
 
+func (s *fcbState) zero() {
+	clear(s.pulsePositions)
+	clear(s.pulseSigns)
+	clear(s.num)
+	clear(s.den)
+}
+
+// searchScratch returns the encoder's FCB search state in exactly the state
+// newFcbSearchScratch and newFcbState build it.
+func (e *CelpEncoder) searchScratch() (*fcbSearchScratch, *[smplCelpMaxRates]fcbState) {
+	if e.fcbScratch == nil {
+		e.fcbScratch = newFcbSearchScratch()
+		for r := range e.fcbBest {
+			e.fcbBest[r] = newFcbState()
+		}
+		return e.fcbScratch, &e.fcbBest
+	}
+	sc := e.fcbScratch
+	for _, states := range sc.fcbStates {
+		for i := range states {
+			states[i].zero()
+		}
+	}
+	sc.readIdx, sc.writeIdx = 0, 1
+	clear(sc.fcbs)
+	sc.fcbsSize = 0
+	clear(sc.fcbCandidates)
+	sc.fcbCandidatesSize = 0
+	clear(sc.uniqueSgntr)
+	sc.uniqueSgntrSize = 0
+	for r := range e.fcbBest {
+		e.fcbBest[r].zero()
+	}
+	return sc, &e.fcbBest
+}
+
 func (sc *fcbSearchScratch) isUnique(sgntr uint64) bool {
 	// Source of truth: https://github.com/oxidezap/whatsapp-rust/blob/ed12f359a086b28e807ba236f0977af1000859fe/wacore/src/voip/mlow/smpl_celp.rs#L928-L930
 	for i := 0; i < sc.uniqueSgntrSize; i++ {
@@ -876,7 +917,7 @@ func (e *CelpEncoder) smplFcbSearchDeldec(d []float32, pitchSharp float32, lag i
 	pulses *[smplCelpMaxRates][smplMaxPulsesPerSf]int16, nPulses *[smplCelpMaxRates]int16, wnrg, gainFromSearch, fcbWnrg *[smplCelpMaxRates]float32) {
 	// Source of truth: https://github.com/oxidezap/whatsapp-rust/blob/ed12f359a086b28e807ba236f0977af1000859fe/wacore/src/voip/mlow/smpl_celp.rs#L1247-L1494
 	fcbSubfrlen := e.fcbSubfrlen
-	sc := newFcbSearchScratch()
+	sc, bestFcbState := e.searchScratch()
 
 	dNew := make([]float32, smplMaxSfLen)
 	dAbs := make([]float32, smplMaxSfLen)
@@ -901,7 +942,6 @@ func (e *CelpEncoder) smplFcbSearchDeldec(d []float32, pitchSharp float32, lag i
 	sc.readIdx = 0
 	sc.writeIdx = 1
 	var bestFcb [smplCelpMaxRates]fcb
-	bestFcbState := [smplCelpMaxRates]fcbState{newFcbState(), newFcbState()}
 	var nrgThr [smplCelpMaxRates]float32
 
 	{
