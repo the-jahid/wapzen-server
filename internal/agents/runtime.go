@@ -101,32 +101,3 @@ func (r *Repository) HasAgentForPhoneNumber(ctx context.Context, phoneNumberID s
 	}
 	return exists, nil
 }
-
-// ActivePhoneNumberIDs returns the numbers that have an active agent of an
-// account that isn't blocked: the numbers that answer and place calls, and so
-// the only ones whatsapplogin keeps connected.
-func (r *Repository) ActivePhoneNumberIDs(ctx context.Context) (map[string]bool, error) {
-	const q = `
-		SELECT DISTINCT phone_number_id
-		FROM agents
-		WHERE phone_number_id IS NOT NULL
-			AND status = 'active'
-			AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = agents.user_id AND u.blocked_at IS NOT NULL)`
-	rows, err := r.pool.Query(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("list numbers with an active agent: %w", err)
-	}
-	defer rows.Close()
-	out := make(map[string]bool)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan number with an active agent: %w", err)
-		}
-		out[id] = true
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list numbers with an active agent: %w", err)
-	}
-	return out, nil
-}
