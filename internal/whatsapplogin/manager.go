@@ -328,6 +328,10 @@ type loginSession struct {
 	// the session is already published in the sessions map and read by
 	// PlaceOutboundCall from request goroutines, so it lives under mu.
 	callClient *meowcaller.Client
+	// keepUntil keeps a number with no active agent open until then: a fresh
+	// pairing (the owner is setting it up) or a weekly check-in (see idle.go).
+	// Under mu.
+	keepUntil time.Time
 }
 
 // NewManager initializes the persistent whatsmeow SQL store using the same
@@ -442,7 +446,13 @@ func (m *Manager) ResumeSessions(ctx context.Context) {
 		log.Printf("whatsapp login: list resumable numbers for resume failed: %v", err)
 		return
 	}
+	active, filtered := m.activeNumbers(ctx)
 	for _, row := range rows {
+		// A number with no active agent stays closed until one goes live
+		// (see idle.go).
+		if filtered && !active[row.ID] {
+			continue
+		}
 		if err := m.resumeSession(ctx, row); err != nil {
 			log.Printf("whatsapp login: resume failed phone_number_id=%s: %v", row.ID, err)
 		}
@@ -1793,6 +1803,7 @@ func qrTimeoutReason(byCode bool, lasted time.Duration) string {
 // on its QR code.
 func (m *Manager) recordPairing(session *loginSession, jid types.JID) {
 	session.rememberDevice(jid.String())
+	session.keepOpenFor(pairedKeepOpen)
 	session.pairOnce.Do(func() {
 		err := m.markSessionConnected(session, jid.String(), phoneNumberFromJID(jid))
 		duplicate := isUniqueViolation(err) && session.draft.pending()

@@ -118,6 +118,9 @@ type Client struct {
 type liveCall struct {
 	call   *meowcaller.Call
 	reason *atomic.Value
+	// phoneNumberID is the number the call runs on, so a number with a call in
+	// progress is never closed as idle (see HasLiveCallOn).
+	phoneNumberID string
 }
 
 // ErrCallNotLive is returned by HangupCall for a call this process is not
@@ -141,6 +144,22 @@ func (c *Client) HangupCall(rowID, reason string) error {
 		entry.reason.Store(reason)
 	}
 	return entry.call.Hangup()
+}
+
+// HasLiveCallOn reports whether a call is ringing or running on phoneNumberID
+// in this process.
+func (c *Client) HasLiveCallOn(phoneNumberID string) bool {
+	if c == nil || phoneNumberID == "" {
+		return false
+	}
+	c.activeMu.Lock()
+	defer c.activeMu.Unlock()
+	for _, entry := range c.live {
+		if entry.phoneNumberID == phoneNumberID {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) trackLive(rowID string, entry liveCall) {
@@ -1066,7 +1085,7 @@ func (c *Client) runCall(call *meowcaller.Call, agent *CallAgent, record *callRe
 	// Reachable by HangupCall from here on. A call that ended before it was
 	// tracked has already run cleanup, so it is taken straight back out.
 	if record != nil {
-		c.trackLive(record.id, liveCall{call: call, reason: &failureReason})
+		c.trackLive(record.id, liveCall{call: call, reason: &failureReason, phoneNumberID: agent.PhoneNumberID})
 		if callEnded.Load() {
 			c.forgetLive(record.id)
 		}

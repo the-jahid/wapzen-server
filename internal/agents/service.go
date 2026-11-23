@@ -15,6 +15,13 @@ type InboundCallRefresher interface {
 	RefreshInboundCallHandling(phoneNumberID string)
 }
 
+// numberOpener opens a number that sits closed because it had no active agent
+// (see whatsapplogin's idle.go). Optional on the refresher, so test doubles
+// needn't implement it.
+type numberOpener interface {
+	OpenForAgent(userID, phoneNumberID string)
+}
+
 // NamespacePurger deletes a knowledge base's vectors from the vector store.
 // Satisfied by *knowledgebases.Indexer. Deleting an agent cascades to the
 // knowledge bases it owns, and the rows going away does not take their vectors
@@ -68,7 +75,21 @@ func (s *Service) Create(ctx context.Context, userID string, req types.CreateAge
 	// A new agent can only add an assignment, so reconnect the assigned number (if
 	// any) to install its inbound-call handler.
 	s.refreshInbound(res.Agent.PhoneNumberID)
+	s.openIfLive(userID, res)
 	return res, nil
+}
+
+// openIfLive opens the number of an agent that is live, which may have been
+// closed while it had no active agent. An agent switched on without changing
+// its number needs this too: no refreshInbound runs then.
+func (s *Service) openIfLive(userID string, res types.AgentResource) {
+	opener, ok := s.inbound.(numberOpener)
+	if !ok || res.Agent == nil || res.Agent.Status != "active" {
+		return
+	}
+	if id := normalizePhoneNumberID(res.Agent.PhoneNumberID); id != nil {
+		opener.OpenForAgent(userID, *id)
+	}
 }
 
 // Get returns one agent owned by userID.
@@ -105,6 +126,7 @@ func (s *Service) Update(ctx context.Context, userID, agentID string, body []byt
 	if !samePhoneNumber(oldPhone, res.Agent.PhoneNumberID) {
 		s.refreshInbound(oldPhone, res.Agent.PhoneNumberID)
 	}
+	s.openIfLive(userID, res)
 	return res, nil
 }
 
@@ -149,4 +171,3 @@ func (s *Service) refreshInbound(phoneNumberIDs ...*string) {
 		s.inbound.RefreshInboundCallHandling(*id)
 	}
 }
-

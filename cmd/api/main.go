@@ -159,6 +159,10 @@ func main() {
 	// live session here.
 	whatsAppLoginManager.KeepNumbersConnected(ctx)
 
+	// Close numbers with no active agent: they answer no calls, so their
+	// sessions would only hold memory. They open again when an agent goes live.
+	whatsAppLoginManager.KeepIdleNumbersClosed(ctx)
+
 	// Build the router with all middleware and routes.
 	router := routes.NewRouter(routes.Dependencies{
 		UsersRepo:                 usersRepo,

@@ -58,12 +58,17 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		log.Printf("whatsapp reconcile: list resumable numbers failed: %v", err)
 		return
 	}
+	active, filtered := m.activeNumbers(ctx)
 	for _, row := range rows {
 		if ctx.Err() != nil || time.Now().UnixNano() < m.supersededUntil.Load() {
 			return
 		}
 		session := m.getSession(row.ID)
 		if session == nil {
+			// Idle numbers stay closed (see idle.go).
+			if filtered && !active[row.ID] {
+				continue
+			}
 			// Only a number whose device is stored is resumed. resumeSession
 			// deletes a row with none, which is right at startup but not here: a
 			// row can name a device that is mid-handover between sessions.
