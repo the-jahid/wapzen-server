@@ -14,12 +14,13 @@ import (
 	"whatsapp-ai-caller-server/internal/activity"
 	"whatsapp-ai-caller-server/internal/agents"
 	"whatsapp-ai-caller-server/internal/auth"
+	"whatsapp-ai-caller-server/internal/broadcasts"
 	"whatsapp-ai-caller-server/internal/calls"
+	"whatsapp-ai-caller-server/internal/callsummary"
 	"whatsapp-ai-caller-server/internal/config"
 	"whatsapp-ai-caller-server/internal/db"
 	"whatsapp-ai-caller-server/internal/embeddings"
 	"whatsapp-ai-caller-server/internal/knowledgebases"
-	"whatsapp-ai-caller-server/internal/outboundcampaigns"
 	"whatsapp-ai-caller-server/internal/phonenumbers"
 	"whatsapp-ai-caller-server/internal/pinecone"
 	"whatsapp-ai-caller-server/internal/routes"
@@ -106,9 +107,15 @@ func main() {
 	usersRepo := users.NewRepository(pool, agentsRepo.CreateDefault)
 	phoneNumbersRepo := phonenumbers.NewRepository(pool)
 	callsRepo := calls.NewRepository(pool)
+	// Every saved call transcript gets a Gemini-written summary (calls.summary).
+	callSummarizer := callsummary.New(callsRepo)
+	callsRepo.OnTranscriptSaved(callSummarizer.AfterTranscript)
+	if !callSummarizer.Enabled() {
+		log.Printf("callsummary: GEMINI_API_KEY not set; call summaries are off")
+	}
 	knowledgeBasesRepo := knowledgebases.NewRepository(pool)
-	outboundCampaignsRepo := outboundcampaigns.NewRepository(pool)
 	toolsRepo := tools.NewRepository(pool)
+	broadcastsRepo := broadcasts.NewRepository(pool)
 
 	// Knowledge base indexing and the retrieval that reads it back. Both upstreams
 	// are constructed unconditionally; missing credentials leave the indexer
@@ -159,6 +166,10 @@ func main() {
 	// live session here.
 	whatsAppLoginManager.KeepNumbersConnected(ctx)
 
+	// Broadcast auto-dialer: calls queued broadcast contacts one after another
+	// from each broadcast agent's WhatsApp number.
+	go broadcasts.NewDialer(pool, whatsAppLoginManager).Run(ctx)
+
 	// Build the router with all middleware and routes.
 	router := routes.NewRouter(routes.Dependencies{
 		UsersRepo:                 usersRepo,
@@ -167,9 +178,10 @@ func main() {
 		CallsRepo:                 callsRepo,
 		KnowledgeBasesRepo:        knowledgeBasesRepo,
 		KnowledgeBaseIndexer:      knowledgeBaseIndexer,
-		OutboundCampaignsRepo:     outboundCampaignsRepo,
 		ToolsRepo:                 toolsRepo,
 		VoiceUsageRepo:            voiceUsageRepo,
+		BroadcastsRepo:            broadcastsRepo,
+		CallSummarizer:            callSummarizer,
 		WhatsAppLoginManager:      whatsAppLoginManager,
 		ClerkWebhookSigningSecret: cfg.ClerkWebhookSigningSecret,
 		CORSAllowedOrigins:        cfg.CORSAllowedOrigins,

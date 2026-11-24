@@ -117,25 +117,6 @@ definitions:
       success:
         type: boolean
     type: object
-  handlers.campaignAnalyticsEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/models.CampaignAnalytics'
-      links:
-        $ref: '#/definitions/handlers.outboundCampaignLinks'
-      message:
-        type: string
-      meta:
-        $ref: '#/definitions/handlers.campaignAnalyticsMeta'
-      success:
-        type: boolean
-    type: object
-  handlers.campaignAnalyticsMeta:
-    properties:
-      days:
-        example: 14
-        type: integer
-    type: object
   handlers.createCallRequest:
     properties:
       agent_id:
@@ -167,18 +148,6 @@ definitions:
         type: integer
       min_chunk_size:
         type: integer
-    type: object
-  handlers.createOutboundCampaignRequest:
-    properties:
-      agent_id:
-        description: |-
-          AgentID is optional at create time so a campaign can be drafted before its
-          agent is chosen, but it is required before the campaign may run.
-        type: string
-      budget_usd:
-        type: number
-      campaign_name:
-        type: string
     type: object
   handlers.knowledgeBaseDeleteData:
     properties:
@@ -297,53 +266,6 @@ definitions:
       phone_number_id:
         example: phone_number_12345
         type: string
-    type: object
-  handlers.outboundCampaignDeleteData:
-    properties:
-      deleted:
-        type: boolean
-      id:
-        type: string
-    type: object
-  handlers.outboundCampaignDeleteEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/handlers.outboundCampaignDeleteData'
-      message:
-        type: string
-      success:
-        type: boolean
-    type: object
-  handlers.outboundCampaignEnvelope:
-    properties:
-      data:
-        $ref: '#/definitions/models.OutboundCampaign'
-      links:
-        $ref: '#/definitions/handlers.outboundCampaignLinks'
-      message:
-        type: string
-      success:
-        type: boolean
-    type: object
-  handlers.outboundCampaignLinks:
-    properties:
-      self:
-        type: string
-    type: object
-  handlers.outboundCampaignListEnvelope:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/models.OutboundCampaign'
-        type: array
-      links:
-        $ref: '#/definitions/types.ListLinks'
-      message:
-        type: string
-      meta:
-        $ref: '#/definitions/types.Meta'
-      success:
-        type: boolean
     type: object
   handlers.phoneNumberEnvelope:
     properties:
@@ -489,8 +411,6 @@ definitions:
       min_chunk_size:
         type: integer
     type: object
-  handlers.updateOutboundCampaignRequest:
-    type: object
   handlers.userEnvelope:
     properties:
       data:
@@ -522,9 +442,6 @@ definitions:
       call_type:
         example: inbound
         type: string
-      campaign_id:
-        example: campaign_a456426614174000
-        type: string
       created_at:
         example: "2026-07-24T10:00:00Z"
         type: string
@@ -539,9 +456,6 @@ definitions:
         type: string
       id:
         example: 9f45d8b4-f76f-43f4-8e69-96c7f9eac7f4
-        type: string
-      lead_id:
-        example: lead_b7218f2265ca4000
         type: string
       messages:
         items:
@@ -568,130 +482,6 @@ definitions:
       role:
         example: assistant
         type: string
-    type: object
-  models.CampaignAnalytics:
-    properties:
-      calls:
-        $ref: '#/definitions/models.CampaignCallTotals'
-      campaign_id:
-        example: campaign_a456426614174000
-        type: string
-      daily:
-        description: |-
-          Daily is one row per day, oldest first, zero-filled so a day with no calls
-          is a gap in the chart rather than a missing bar.
-        items:
-          $ref: '#/definitions/models.CampaignDailyActivity'
-        type: array
-      end_reasons:
-        description: |-
-          EndReasons are the most common reasons this campaign's calls ended, most
-          frequent first. Calls that never recorded one are left out.
-        items:
-          $ref: '#/definitions/models.CampaignEndReason'
-        type: array
-      first_call_at:
-        example: "2026-08-10T10:00:00Z"
-        type: string
-      last_call_at:
-        example: "2026-08-14T16:20:00Z"
-        type: string
-      leads:
-        $ref: '#/definitions/models.CampaignLeadTotals'
-      pickup_rate:
-        description: |-
-          PickupRate is answered calls over calls placed; SuccessRate is calls that
-          were answered and then ended normally over calls placed; ReachRate is the
-          share of leads that have been called. All three are 0 when their
-          denominator is, rather than NaN.
-        example: 0.62
-        type: number
-      reach_rate:
-        example: 0.41
-        type: number
-      success_rate:
-        example: 0.28
-        type: number
-      talk_time:
-        $ref: '#/definitions/models.CampaignTalkTime'
-    type: object
-  models.CampaignCallTotals:
-    properties:
-      answered:
-        example: 2
-        type: integer
-      connected:
-        example: 60
-        type: integer
-      declined:
-        example: 18
-        type: integer
-      ended:
-        example: 70
-        type: integer
-      failed:
-        example: 5
-        type: integer
-      received:
-        example: 1
-        type: integer
-      successful:
-        example: 58
-        type: integer
-      total:
-        example: 96
-        type: integer
-    type: object
-  models.CampaignDailyActivity:
-    properties:
-      answered:
-        example: 7
-        type: integer
-      calls:
-        example: 12
-        type: integer
-      date:
-        example: "2026-08-14"
-        type: string
-    type: object
-  models.CampaignEndReason:
-    properties:
-      count:
-        example: 23
-        type: integer
-      reason:
-        example: callee hung up
-        type: string
-    type: object
-  models.CampaignLeadTotals:
-    properties:
-      called:
-        example: 43
-        type: integer
-      calling:
-        example: 2
-        type: integer
-      failed:
-        example: 11
-        type: integer
-      pending:
-        example: 64
-        type: integer
-      total:
-        example: 120
-        type: integer
-    type: object
-  models.CampaignTalkTime:
-    properties:
-      average_seconds:
-        example: 124
-        type: integer
-      longest_seconds:
-        example: 431
-        type: integer
-      total_seconds:
-        example: 7420
-        type: integer
     type: object
   models.KnowledgeBase:
     properties:
@@ -751,79 +541,6 @@ definitions:
         type: string
       type:
         example: text
-        type: string
-    type: object
-  models.OutboundCampaign:
-    properties:
-      agent_id:
-        description: |-
-          AgentID is the agent the campaign dials with, and the only half of the
-          pairing a caller sets: the agent already carries the number it speaks on,
-          so AgentName, PhoneNumberID and PhoneNumber are read off the agent on
-          every read rather than stored here, and cannot disagree with it.
-        example: agent_9f1c2d3e4b5a6789
-        type: string
-      agent_name:
-        example: Pearl
-        type: string
-      answered_calls:
-        example: 412
-        type: integer
-      budget_usd:
-        example: 250
-        type: number
-      calls_placed:
-        example: 656
-        type: integer
-      campaign_id:
-        example: campaign_a456426614174000
-        type: string
-      campaign_name:
-        example: July reactivation
-        type: string
-      completed_at:
-        example: "2026-08-10T18:00:00Z"
-        type: string
-      created_at:
-        example: "2026-08-01T08:42:00Z"
-        type: string
-      leads_count:
-        description: Counters, maintained by the server as the campaign places calls.
-        example: 1240
-        type: integer
-      phone_number:
-        example: "+390232164148"
-        type: string
-      phone_number_id:
-        example: pn_2c1d4e5f6a7b8c90
-        type: string
-      pickup_rate:
-        description: |-
-          PickupRate and SuccessRate are derived from the counters by
-          ApplyDerivedFields rather than stored, so they can never disagree with the
-          numbers they come from.
-        example: 0.628
-        type: number
-      started_at:
-        example: "2026-08-01T09:00:00Z"
-        type: string
-      status:
-        example: running
-        type: string
-      success_rate:
-        example: 0.287
-        type: number
-      successful_calls:
-        example: 188
-        type: integer
-      today_calls:
-        example: 37
-        type: integer
-      total_usage_seconds:
-        example: 74520
-        type: integer
-      updated_at:
-        example: "2026-08-10T11:15:00Z"
         type: string
     type: object
   models.PhoneNumber:
@@ -1455,6 +1172,11 @@ paths:
         in: query
         name: limit
         type: integer
+      - description: Match part of the number, or the start of the status or call
+          type
+        in: query
+        name: search
+        type: string
       produces:
       - application/json
       responses:
@@ -1652,320 +1374,6 @@ paths:
       summary: Update Call
       tags:
       - Calls
-  /v1/outbound-campaigns:
-    get:
-      description: Returns a paginated list of the outbound campaigns owned by the
-        authenticated user, newest first, each with its current counters.
-      parameters:
-      - description: Page number (1-based)
-        in: query
-        name: page
-        type: integer
-      - description: Items per page (1-100)
-        in: query
-        name: limit
-        type: integer
-      - description: Filter by campaign status
-        in: query
-        name: status
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.outboundCampaignListEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: List Outbound Campaigns
-      tags:
-      - Outbound Campaign
-    post:
-      consumes:
-      - application/json
-      description: 'Creates an outbound campaign owned by the authenticated user.
-        campaign_name is the only required field and must be unique among the owner''s
-        campaigns. The campaign is created at status draft with every counter at zero;
-        omitting budget_usd leaves it uncapped. agent_id is optional here but required
-        before the campaign can run: it must name one of the owner''s agents that
-        already has a phone number assigned, and that agent''s number is the one the
-        campaign dials from — a campaign never names a number of its own.'
-      parameters:
-      - description: Campaign to create
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.createOutboundCampaignRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/handlers.outboundCampaignEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Create Outbound Campaign
-      tags:
-      - Outbound Campaign
-  /v1/outbound-campaigns/{campaign_id}:
-    delete:
-      description: Deletes a campaign by id, scoped to the authenticated user. A running
-        campaign is refused with 409; pause it first. Calls the campaign already placed
-        are not deleted.
-      parameters:
-      - description: Campaign id
-        in: path
-        name: campaign_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.outboundCampaignDeleteEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Delete Outbound Campaign
-      tags:
-      - Outbound Campaign
-    get:
-      description: Returns a single outbound campaign by id, scoped to the authenticated
-        user, with its counters and the pickup_rate and success_rate derived from
-        them.
-      parameters:
-      - description: Campaign id
-        in: path
-        name: campaign_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.outboundCampaignEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Get Outbound Campaign
-      tags:
-      - Outbound Campaign
-    patch:
-      consumes:
-      - application/json
-      description: Applies a partial update to a campaign owned by the authenticated
-        user. Only campaign_name, status, budget_usd and agent_id may be changed;
-        at least one field must be supplied and omitted fields keep their stored value.
-        Send budget_usd null to remove a spend cap, or agent_id null to detach the
-        agent. agent_id must name one of the owner's agents that has a phone number
-        assigned; the campaign dials from that agent's number, which is why the number
-        itself is read-only. Legal status moves are draft/paused to running, running
-        to paused or completed, and any live status to failed; completed and failed
-        are terminal. A campaign cannot be running without an agent, so starting one
-        without an agent, or detaching the agent of a running one, is refused with
-        409.
-      parameters:
-      - description: Campaign id
-        in: path
-        name: campaign_id
-        required: true
-        type: string
-      - description: Fields to change
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.updateOutboundCampaignRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.outboundCampaignEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Update Outbound Campaign
-      tags:
-      - Outbound Campaign
-  /v1/outbound-campaigns/{campaign_id}/analytics:
-    get:
-      description: 'Returns the campaign''s performance: lead and call breakdowns
-        by status, pickup/success/reach rates, talk time, a zero-filled daily series
-        of calls placed and answered, and the most common hangup reasons. Everything
-        is aggregated from the leads and calls themselves rather than read off the
-        campaign''s stored counters. days sets the length of the daily series (1-90,
-        default 14).'
-      parameters:
-      - description: Campaign id
-        in: path
-        name: campaign_id
-        required: true
-        type: string
-      - description: Days of daily activity to return (1-90)
-        in: query
-        name: days
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.campaignAnalyticsEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Get Outbound Campaign Analytics
-      tags:
-      - Outbound Campaign
-  /v1/outbound-campaigns/{campaign_id}/calls:
-    get:
-      description: Returns a paginated list of the calls placed by one of the authenticated
-        user's outbound campaigns, newest first. These are the same call resources
-        GET /v1/calls serves, narrowed to the campaign that placed them.
-      parameters:
-      - description: Campaign id
-        in: path
-        name: campaign_id
-        required: true
-        type: string
-      - description: Page number (1-based)
-        in: query
-        name: page
-        type: integer
-      - description: Items per page (1-200)
-        in: query
-        name: limit
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.callListEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/types.ErrorEnvelope'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/models.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: List Campaign Calls
-      tags:
-      - Outbound Campaign
   /v1/users/me:
     get:
       description: Returns the application user for the authenticated Clerk session,

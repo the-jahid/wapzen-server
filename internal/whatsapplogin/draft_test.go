@@ -73,6 +73,15 @@ func TestLiveDraftNeedsARunningSession(t *testing.T) {
 	if _, ok := m.liveDraft("user_123", "agent_9"); ok {
 		t.Fatal("a login promised elsewhere was offered to another agent")
 	}
+
+	// Nor will a login for no agent inherit one promised to an agent.
+	session.assignAgentID = "agent_9"
+	if _, ok := m.liveDraft("user_123", "agent_9"); !ok {
+		t.Fatal("the agent's own login was not offered back to it")
+	}
+	if _, ok := m.liveDraft("user_123", ""); ok {
+		t.Fatal("a login promised to an agent was offered to no agent")
+	}
 }
 
 func TestPromotedDraftIsNoLongerPending(t *testing.T) {

@@ -161,7 +161,7 @@ func deleteToolResponseExample() oas.Object {
 
 // ---------------------------------------------------------------------------
 // Error response examples — the shared ErrorResponse envelope, matching the
-// convention the Agents, Knowledge Base and Outbound Campaigns modules use.
+// convention the Agents and Knowledge Base modules use.
 // ---------------------------------------------------------------------------
 
 func errorExample(message string, fieldErrors ...oas.Object) oas.Object {

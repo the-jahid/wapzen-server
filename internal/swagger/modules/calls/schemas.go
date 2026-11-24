@@ -59,8 +59,6 @@ func callSchema() oas.Object {
 		P("call_id", oas.Str().Desc("Underlying WhatsApp call id.").Example("C7A1B2C3D4E5F6")).
 		P("phone_number_id", oas.Str().Nullable().Desc("Phone number the call used, if still present.").Example("phone_number_12345")).
 		P("agent_id", oas.Str().Nullable().Desc("Agent that handled the call, if still present.").Example("agent_12345")).
-		P("campaign_id", oas.Str().Nullable().Desc("Outbound campaign that placed the call; null on every call no campaign placed.").Example(nil)).
-		P("lead_id", oas.Str().Nullable().Desc("Campaign lead the call was placed to; null on every call no campaign placed.").Example(nil)).
 		P("peer", oas.Str().Desc("The remote party (caller/callee) JID.").Example("15557654321@s.whatsapp.net")).
 		P("call_type", oas.Str().Desc("Call direction.").
 			Enum([]string{models.CallTypeInbound, models.CallTypeOutbound}).Example(models.CallTypeInbound)).

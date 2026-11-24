@@ -6,11 +6,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"whatsapp-ai-caller-server/internal/agents"
+	"whatsapp-ai-caller-server/internal/broadcasts"
 	"whatsapp-ai-caller-server/internal/calls"
+	"whatsapp-ai-caller-server/internal/callsummary"
 	"whatsapp-ai-caller-server/internal/handlers"
 	"whatsapp-ai-caller-server/internal/knowledgebases"
 	appmiddleware "whatsapp-ai-caller-server/internal/middleware"
-	"whatsapp-ai-caller-server/internal/outboundcampaigns"
 	"whatsapp-ai-caller-server/internal/phonenumbers"
 	"whatsapp-ai-caller-server/internal/swagger"
 	"whatsapp-ai-caller-server/internal/tools"
@@ -27,9 +28,10 @@ type Dependencies struct {
 	CallsRepo                 *calls.Repository
 	KnowledgeBasesRepo        *knowledgebases.Repository
 	KnowledgeBaseIndexer      *knowledgebases.Indexer
-	OutboundCampaignsRepo     *outboundcampaigns.Repository
 	ToolsRepo                 *tools.Repository
 	VoiceUsageRepo            *voiceusage.Repository
+	BroadcastsRepo            *broadcasts.Repository
+	CallSummarizer            *callsummary.Summarizer
 	WhatsAppLoginManager      *whatsapplogin.Manager
 	ClerkWebhookSigningSecret string
 	CORSAllowedOrigins        []string
@@ -59,14 +61,10 @@ func NewRouter(deps Dependencies) http.Handler {
 		deps.WhatsAppLoginManager,
 	)
 	knowledgeBaseHandler := handlers.NewKnowledgeBaseHandler(deps.KnowledgeBasesRepo, deps.KnowledgeBaseIndexer)
-	outboundCampaignHandler := handlers.NewOutboundCampaignHandler(deps.OutboundCampaignsRepo, deps.AgentsRepo)
-	campaignLeadHandler := handlers.NewCampaignLeadHandler(
-		deps.OutboundCampaignsRepo,
-		deps.CallsRepo,
-		deps.WhatsAppLoginManager,
-	)
 	toolHandler := handlers.NewToolHandler(deps.ToolsRepo)
 	voiceUsageController := voiceusage.NewController(deps.VoiceUsageRepo)
+	broadcastController := broadcasts.NewController(deps.BroadcastsRepo)
+	callSummaryController := callsummary.NewController(deps.CallSummarizer, deps.CallsRepo)
 	authMW := appmiddleware.NewAuth(deps.UsersRepo)
 
 	// Built-in chi middleware.
@@ -129,6 +127,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Get("/v1/dashboard/calls/{call_id}", callHandler.Get)
 		r.Patch("/v1/dashboard/calls/{call_id}", callHandler.Update)
 		r.Post("/v1/dashboard/calls/{call_id}/hangup", callHandler.Hangup)
+		r.Post("/v1/dashboard/calls/{call_id}/summary", callSummaryController.Generate)
 		r.Delete("/v1/dashboard/calls/{call_id}", callHandler.Delete)
 
 		// Dashboard knowledge bases, sharing the handlers with the
@@ -151,24 +150,17 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Delete("/v1/dashboard/voice/tools/{tool_id}", toolHandler.Delete)
 		r.Post("/v1/dashboard/voice/tools/{tool_id}/test", toolHandler.Test)
 
-		// Dashboard outbound campaigns, sharing the handlers with the
-		// /v1/outbound-campaigns routes below.
-		r.Post("/v1/dashboard/outbound-campaigns", outboundCampaignHandler.Create)
-		r.Get("/v1/dashboard/outbound-campaigns", outboundCampaignHandler.List)
-		r.Get("/v1/dashboard/outbound-campaigns/{campaign_id}", outboundCampaignHandler.Get)
-		r.Patch("/v1/dashboard/outbound-campaigns/{campaign_id}", outboundCampaignHandler.Update)
-		r.Delete("/v1/dashboard/outbound-campaigns/{campaign_id}", outboundCampaignHandler.Delete)
-		// A campaign's own call history. It shares the calls handler with the
-		// routes above; only the campaign that placed the calls narrows it.
-		r.Get("/v1/dashboard/outbound-campaigns/{campaign_id}/calls", callHandler.ListByCampaign)
-		r.Get("/v1/dashboard/outbound-campaigns/{campaign_id}/analytics", outboundCampaignHandler.Analytics)
-		// Adding a lead also dials it with the campaign's agent, so this is the
-		// route that puts a campaign's calls on the wire.
-		r.Post("/v1/dashboard/outbound-campaigns/{campaign_id}/leads", campaignLeadHandler.Create)
-		r.Get("/v1/dashboard/outbound-campaigns/{campaign_id}/leads", campaignLeadHandler.List)
-		r.Get("/v1/dashboard/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Get)
-		r.Patch("/v1/dashboard/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Update)
-		r.Delete("/v1/dashboard/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Delete)
+		// Voice broadcasts: any number per user, each with one of their agents.
+		r.Post("/v1/dashboard/voice/broadcasts", broadcastController.Create)
+		r.Get("/v1/dashboard/voice/broadcasts", broadcastController.List)
+		r.Get("/v1/dashboard/voice/broadcasts/{broadcast_id}", broadcastController.Get)
+		r.Patch("/v1/dashboard/voice/broadcasts/{broadcast_id}", broadcastController.Update)
+		r.Delete("/v1/dashboard/voice/broadcasts/{broadcast_id}", broadcastController.Delete)
+		r.Get("/v1/dashboard/voice/broadcasts/{broadcast_id}/contacts", broadcastController.ListContacts)
+		r.Post("/v1/dashboard/voice/broadcasts/{broadcast_id}/contacts", broadcastController.CreateContact)
+		r.Post("/v1/dashboard/voice/broadcasts/{broadcast_id}/contacts/import", broadcastController.ImportContacts)
+		r.Delete("/v1/dashboard/voice/broadcasts/{broadcast_id}/contacts/{contact_id}", broadcastController.DeleteContact)
+
 	})
 
 	// Agent API: the same handlers under their plain /v1 paths. API keys were
@@ -214,21 +206,6 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Delete("/v1/voice/tools/{tool_id}", toolHandler.Delete)
 		r.Post("/v1/voice/tools/{tool_id}/test", toolHandler.Test)
 
-		// Outbound campaigns. Every operation is scoped to the authenticated API
-		// key owner. A campaign records the batch and its counters, and adding a
-		// lead to one dials that lead with the campaign's agent.
-		r.Post("/v1/outbound-campaigns", outboundCampaignHandler.Create)
-		r.Get("/v1/outbound-campaigns", outboundCampaignHandler.List)
-		r.Get("/v1/outbound-campaigns/{campaign_id}", outboundCampaignHandler.Get)
-		r.Patch("/v1/outbound-campaigns/{campaign_id}", outboundCampaignHandler.Update)
-		r.Delete("/v1/outbound-campaigns/{campaign_id}", outboundCampaignHandler.Delete)
-		r.Get("/v1/outbound-campaigns/{campaign_id}/calls", callHandler.ListByCampaign)
-		r.Get("/v1/outbound-campaigns/{campaign_id}/analytics", outboundCampaignHandler.Analytics)
-		r.Post("/v1/outbound-campaigns/{campaign_id}/leads", campaignLeadHandler.Create)
-		r.Get("/v1/outbound-campaigns/{campaign_id}/leads", campaignLeadHandler.List)
-		r.Get("/v1/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Get)
-		r.Patch("/v1/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Update)
-		r.Delete("/v1/outbound-campaigns/{campaign_id}/leads/{lead_id}", campaignLeadHandler.Delete)
 	})
 
 	// Serve our merged OpenAPI 3 document (base endpoints + static Agents docs).

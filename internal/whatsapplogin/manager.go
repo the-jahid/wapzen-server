@@ -652,7 +652,9 @@ func (m *Manager) endLiveDrafts(userID string) {
 // A draft whose scan has already landed is not offered (its number exists now),
 // and neither is one promised to a different agent: an agent editor asking for
 // a code wants the number for itself, so that starts its own login rather than
-// inheriting a session that will assign elsewhere.
+// inheriting a session that will assign elsewhere. The same goes for a login
+// that belongs to no agent (creating an agent scans first): it must not inherit
+// one promised to an agent.
 func (m *Manager) liveDraft(userID, assignAgentID string) (models.PhoneNumber, bool) {
 	m.draftMu.Lock()
 	candidates := make([]*draftLogin, 0, len(m.drafts))
@@ -677,7 +679,7 @@ func (m *Manager) liveDraft(userID, assignAgentID string) (models.PhoneNumber, b
 		if session == nil || session.isConnected() {
 			continue
 		}
-		if assignAgentID != "" && assignAgentID != session.assignAgentID {
+		if assignAgentID != session.assignAgentID {
 			continue
 		}
 		log.Printf("whatsapp login: serving the QR login already running as phone_number_id=%s", row.ID)
@@ -1517,18 +1519,11 @@ func (m *Manager) assignPendingAgent(session *loginSession) {
 // to the number, so a value naming a different one is ErrAgentMismatch rather
 // than a call placed by an agent the caller did not intend. Empty skips the
 // check.
-//
-// CampaignID and LeadID mark the call as an outbound campaign's, which is what
-// lets the campaign list it and what advances the campaign's counters and the
-// lead's status as the call progresses. Both empty places an ordinary one-off
-// call belonging to no campaign.
 type OutboundCall struct {
 	UserID        string
 	PhoneNumberID string
 	To            string
 	ExpectAgentID string
-	CampaignID    string
-	LeadID        string
 }
 
 // PlaceOutboundCall calls req.To from the user's phone number, with the agent
@@ -1563,10 +1558,6 @@ func (m *Manager) PlaceOutboundCall(ctx context.Context, req OutboundCall) (stri
 	if expect := strings.TrimSpace(req.ExpectAgentID); expect != "" && expect != agent.AgentID {
 		return "", fmt.Errorf("%w: this number is assigned to agent %s", ErrAgentMismatch, agent.AgentID)
 	}
-	// Stamped on the agent rather than passed down beside it, because the call
-	// record is written from the agent at insert time.
-	agent.CampaignID = strings.TrimSpace(req.CampaignID)
-	agent.LeadID = strings.TrimSpace(req.LeadID)
 
 	log.Printf("voicecall: agent %s placing outbound call from phone_number_id=%s", agent.AgentID, req.PhoneNumberID)
 	return m.voice.PlaceCall(ctx, callClient, req.To, agent)
@@ -1615,6 +1606,22 @@ func (m *Manager) RefreshInboundCallHandling(phoneNumberID string) {
 		return
 	}
 	go m.refreshInboundCallHandling(strings.TrimSpace(phoneNumberID))
+}
+
+// attachLateAgent makes a number call-ready when its agent was assigned while it
+// was still connecting. A scanned number reads as connected from the pairing,
+// seconds before its socket is back, so an agent created right after the scan is
+// saved while RefreshInboundCallHandling still finds nothing connected to
+// refresh, and the session has come up without a call handler.
+func (m *Manager) attachLateAgent(session *loginSession) {
+	if m.voice == nil || session.callCapableClient() != nil {
+		return
+	}
+	go func() {
+		if m.shouldAttachInbound(context.Background(), session.phoneNumberID) {
+			m.refreshInboundCallHandling(session.phoneNumberID)
+		}
+	}()
 }
 
 func (m *Manager) refreshInboundCallHandling(phoneNumberID string) {
@@ -1891,6 +1898,7 @@ func (m *Manager) handleEvent(session *loginSession, evt any) {
 			return
 		}
 		m.assignPendingAgent(session)
+		m.attachLateAgent(session)
 	case *events.Disconnected:
 		if session.isConnected() && !session.isClosing() {
 			go m.recoverDroppedSession(session)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -100,6 +101,9 @@ type createCallRequest struct {
 	PhoneNumberID string `json:"phone_number_id"`
 	To            string `json:"to"`
 	AgentID       string `json:"agent_id"`
+	// BroadcastContactID, when set, links the call to that broadcast contact so
+	// the dashboard can list the contact's calls. It must be the user's.
+	BroadcastContactID string `json:"broadcast_contact_id"`
 }
 
 // Create places an outbound call from one of the authenticated user's connected
@@ -157,6 +161,18 @@ func (h *CallHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.BroadcastContactID != "" {
+		_, owned, err := h.repo.BroadcastContactOwned(r.Context(), user.ID, req.BroadcastContactID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "failed to load broadcast contact"})
+			return
+		}
+		if !owned {
+			writeJSON(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "broadcast contact not found"})
+			return
+		}
+	}
+
 	callRowID, err := h.loginManager.PlaceOutboundCall(r.Context(), whatsapplogin.OutboundCall{
 		UserID:        user.ID,
 		PhoneNumberID: req.PhoneNumberID,
@@ -172,6 +188,14 @@ func (h *CallHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, status, resp)
 		return
+	}
+
+	if req.BroadcastContactID != "" {
+		// Best effort: the call is already ringing, so a failed link is logged
+		// rather than reported as a failed call.
+		if err := h.repo.LinkBroadcastContact(r.Context(), user.ID, callRowID, req.BroadcastContactID); err != nil {
+			log.Printf("calls: %v", err)
+		}
 	}
 
 	// The call is ringing and recorded; hand back the stored row so the response
@@ -217,6 +241,7 @@ func decodeCreateCallRequest(w http.ResponseWriter, r *http.Request) (createCall
 	req.PhoneNumberID = strings.TrimSpace(req.PhoneNumberID)
 	req.To = strings.TrimSpace(req.To)
 	req.AgentID = strings.TrimSpace(req.AgentID)
+	req.BroadcastContactID = strings.TrimSpace(req.BroadcastContactID)
 
 	var fieldErrs []types.FieldError
 	if req.PhoneNumberID == "" {
@@ -304,6 +329,7 @@ func placeCallErrorResponse(err error) (int, string) {
 // @Security     BearerAuth
 // @Param        page   query     int  false  "Page number (1-based)"
 // @Param        limit  query     int  false  "Items per page (1-200)"
+// @Param        search query     string false "Match part of the number, or the start of the status or call type"
 // @Success      200    {object}  handlers.callListEnvelope
 // @Failure      400    {object}  types.ErrorEnvelope
 // @Failure      401    {object}  models.APIResponse
@@ -325,7 +351,17 @@ func (h *CallHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, total, err := h.repo.ListByUser(r.Context(), user.ID, limit, (page-1)*limit)
+	var (
+		list  []models.Call
+		total int
+		err   error
+	)
+	if contactID := strings.TrimSpace(r.URL.Query().Get("broadcast_contact_id")); contactID != "" {
+		// Only the calls placed from that broadcast contact.
+		list, total, err = h.repo.ListByBroadcastContact(r.Context(), user.ID, contactID, limit, (page-1)*limit)
+	} else {
+		list, total, err = h.repo.ListByUser(r.Context(), user.ID, r.URL.Query().Get("search"), limit, (page-1)*limit)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
@@ -342,65 +378,6 @@ func (h *CallHandler) List(w http.ResponseWriter, r *http.Request) {
 		Data:    list,
 		Meta:    &meta,
 		Links:   buildListLinks(callsListPath, page, limit, total, nil),
-	})
-}
-
-// ListByCampaign returns a page of the calls one outbound campaign placed,
-// newest first. It is the campaign's own call history: the same call resources
-// List serves, narrowed to the calls that campaign caused.
-//
-// ListByCampaign godoc
-// @Summary      List Campaign Calls
-// @Description  Returns a paginated list of the calls placed by one of the authenticated user's outbound campaigns, newest first. These are the same call resources GET /v1/calls serves, narrowed to the campaign that placed them.
-// @Tags         Outbound Campaign
-// @Produce      json
-// @Security     BearerAuth
-// @Param        campaign_id  path      string  true   "Campaign id"
-// @Param        page         query     int     false  "Page number (1-based)"
-// @Param        limit        query     int     false  "Items per page (1-200)"
-// @Success      200          {object}  handlers.callListEnvelope
-// @Failure      400          {object}  types.ErrorEnvelope
-// @Failure      401          {object}  models.APIResponse
-// @Failure      500          {object}  models.APIResponse
-// @Router       /v1/outbound-campaigns/{campaign_id}/calls [get]
-func (h *CallHandler) ListByCampaign(w http.ResponseWriter, r *http.Request) {
-	user, ok := currentUser(w, r)
-	if !ok {
-		return
-	}
-
-	campaignID, ok := outboundCampaignIDParam(w, r)
-	if !ok {
-		return
-	}
-
-	page, limit, fieldErrs := parseCallListQuery(r.URL.Query())
-	if len(fieldErrs) > 0 {
-		writeJSON(w, http.StatusBadRequest, types.ErrorEnvelope{
-			Success: false,
-			Message: "Invalid query parameters",
-			Errors:  fieldErrs,
-		})
-		return
-	}
-
-	list, total, err := h.repo.ListByCampaign(r.Context(), user.ID, campaignID, limit, (page-1)*limit)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, models.APIResponse{
-			Success: false,
-			Message: "failed to list campaign calls",
-		})
-		return
-	}
-
-	meta := buildPaginationMeta(page, limit, total)
-
-	writeJSON(w, http.StatusOK, callListEnvelope{
-		Success: true,
-		Message: "Campaign calls retrieved successfully",
-		Data:    list,
-		Meta:    &meta,
-		Links:   buildListLinks(outboundCampaignsListPath+"/"+campaignID+"/calls", page, limit, total, nil),
 	})
 }
 

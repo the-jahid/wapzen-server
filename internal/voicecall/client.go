@@ -169,15 +169,6 @@ type CallAgent struct {
 	PhoneNumberID string
 	AgentID       string
 
-	// CampaignID and LeadID record which outbound campaign, and which lead in
-	// it, this call was placed for. Both are empty on every other call — an
-	// inbound one, or an outbound one placed directly through the Calls API —
-	// and are stored as NULL then. They are what lets a campaign list its own
-	// calls, and what the database trigger reads to advance the campaign's
-	// counters and the lead's status as the call progresses.
-	CampaignID string
-	LeadID     string
-
 	// Instructions is the agent's prompt for the Realtime session.
 	Instructions string
 
@@ -491,8 +482,6 @@ func (c *Client) beginCallRecord(call *meowcaller.Call, agent *CallAgent, callTy
 		UserID:        agent.UserID,
 		PhoneNumberID: agent.PhoneNumberID,
 		AgentID:       agent.AgentID,
-		CampaignID:    agent.CampaignID,
-		LeadID:        agent.LeadID,
 		Peer:          peerAddress(call),
 		CallType:      callType,
 	})

@@ -47,14 +47,31 @@ const peerColumn = `
 // made in one place. peer is a resolving expression (see peerColumn), so the
 // value scanned back is the caller's phone JID when it can be recovered.
 const callColumns = `
-	id, call_id, user_id, phone_number_id, agent_id, campaign_id, lead_id,` + peerColumn + `, call_type,
+	id, call_id, user_id, phone_number_id, agent_id,` + peerColumn + `, call_type,
 	status, end_reason, duration_seconds, answered_at, ended_at,
-	created_at, updated_at
+	created_at, updated_at, summary
 `
 
 // Repository owns persistence for the calls table.
 type Repository struct {
 	pool *pgxpool.Pool
+	// onTranscript, when set, runs after a transcript is saved (used to write
+	// the call summary). Set once at startup via OnTranscriptSaved.
+	onTranscript func(callID string, messages []models.CallMessage)
+}
+
+// OnTranscriptSaved registers fn to run after every successful SaveTranscript.
+// fn must not block: it is called on the call's teardown path.
+func (r *Repository) OnTranscriptSaved(fn func(callID string, messages []models.CallMessage)) {
+	r.onTranscript = fn
+}
+
+// SetSummary stores the call's summary. callID is the calls-table row id.
+func (r *Repository) SetSummary(ctx context.Context, callID, summary string) error {
+	if _, err := r.pool.Exec(ctx, `UPDATE calls SET summary = $2, updated_at = now() WHERE id = $1`, callID, summary); err != nil {
+		return fmt.Errorf("set call summary: %w", err)
+	}
+	return nil
 }
 
 // NewRepository creates a calls repository backed by pgxpool.
@@ -67,17 +84,11 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 // generated row id. "received" is the shared not-yet-connected state for both
 // directions; the call advances to "answered" once media flows. PhoneNumberID
 // and AgentID are stored as NULL when empty so call history survives the number
-// or agent being deleted later, as are CampaignID and LeadID, which are set only
-// on a call an outbound campaign placed.
-//
-// Inserting a row that carries a campaign is also what advances that campaign:
-// the calls_placed/today_calls counters and the lead's own "calling" status are
-// stamped by a database trigger on this insert (migration 00040), so they follow
-// the call rather than having to be maintained beside it.
+// or agent being deleted later,.
 func (r *Repository) Insert(ctx context.Context, params models.NewCall) (string, error) {
 	const q = `
-		INSERT INTO calls (call_id, user_id, phone_number_id, agent_id, campaign_id, lead_id, peer, call_type, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'received')
+		INSERT INTO calls (call_id, user_id, phone_number_id, agent_id, peer, call_type, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'received')
 		RETURNING id`
 
 	var id string
@@ -86,8 +97,6 @@ func (r *Repository) Insert(ctx context.Context, params models.NewCall) (string,
 		params.UserID,
 		nullIfEmpty(params.PhoneNumberID),
 		nullIfEmpty(params.AgentID),
-		nullIfEmpty(params.CampaignID),
-		nullIfEmpty(params.LeadID),
 		params.Peer,
 		params.CallType,
 	).Scan(&id)
@@ -176,19 +185,39 @@ func (r *Repository) MarkFailed(ctx context.Context, id, reason string) error {
 // pagination metadata. limit and offset page the result; callers are expected to
 // clamp them to sane bounds. The returned slice is always non-nil so an empty
 // page serializes as [] rather than null.
-func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offset int) ([]models.Call, int, error) {
+//
+// search, when not empty, narrows the list the way the dashboard's search box
+// reads: part of the peer (its digits alone also match, so "01701 750469" finds
+// 8801701750469@s.whatsapp.net), or the start of the status or call type.
+func (r *Repository) ListByUser(ctx context.Context, userID, search string, limit, offset int) ([]models.Call, int, error) {
+	where := "user_id = $1"
+	args := []any{userID}
+	if search = strings.TrimSpace(search); search != "" {
+		like := "%" + escapeLike(search) + "%"
+		prefix := escapeLike(strings.ToLower(search)) + "%"
+		digits := onlyDigits(search)
+		args = append(args, like, prefix)
+		cond := "peer ILIKE $2 OR lower(status) LIKE $3 OR lower(call_type) LIKE $3"
+		if digits != "" {
+			args = append(args, "%"+digits+"%")
+			cond += " OR regexp_replace(split_part(peer, '@', 1), '[^0-9]', '', 'g') LIKE $4"
+		}
+		where += " AND (" + cond + ")"
+	}
+
+	n := len(args)
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM calls
-		WHERE user_id = $1
+		WHERE %s
 		ORDER BY created_at DESC, id DESC
-		LIMIT $2 OFFSET $3
-	`, callColumns)
+		LIMIT $%d OFFSET $%d
+	`, callColumns, where, n+1, n+2)
 
 	out := make([]models.Call, 0)
 	total, err := db.ListPage(ctx, r.pool,
-		"SELECT count(*) FROM calls WHERE user_id = $1", []any{userID},
-		query, []any{userID, limit, offset},
+		"SELECT count(*) FROM calls WHERE "+where, args,
+		query, append(append([]any{}, args...), limit, offset),
 		func(rows pgx.Rows) error {
 			call, err := scanCall(rows)
 			if err != nil {
@@ -200,43 +229,6 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list calls: %w", err)
-	}
-	return out, total, nil
-}
-
-// ListByCampaign returns one page of the calls one outbound campaign placed,
-// newest first, together with the total number of them. It is scoped to the
-// authenticated user as well as the campaign, so a campaign id belonging to
-// somebody else simply matches nothing rather than exposing their calls.
-//
-// The returned slice is always non-nil so an empty page serializes as [] rather
-// than null.
-func (r *Repository) ListByCampaign(ctx context.Context, userID, campaignID string, limit, offset int) ([]models.Call, int, error) {
-	const countQuery = `SELECT count(*) FROM calls WHERE user_id = $1 AND campaign_id = $2`
-
-	query := fmt.Sprintf(`
-		SELECT %s
-		FROM calls
-		WHERE user_id = $1 AND campaign_id = $2
-		ORDER BY created_at DESC, id DESC
-		LIMIT $3 OFFSET $4
-	`, callColumns)
-
-	out := make([]models.Call, 0)
-	total, err := db.ListPage(ctx, r.pool,
-		countQuery, []any{userID, campaignID},
-		query, []any{userID, campaignID, limit, offset},
-		func(rows pgx.Rows) error {
-			call, err := scanCall(rows)
-			if err != nil {
-				return fmt.Errorf("scan campaign call: %w", err)
-			}
-			out = append(out, call)
-			return nil
-		},
-	)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list campaign calls: %w", err)
 	}
 	return out, total, nil
 }
@@ -367,6 +359,9 @@ func (r *Repository) SaveTranscript(ctx context.Context, callID string, messages
 	if err != nil {
 		return 0, fmt.Errorf("save call transcript: %w", err)
 	}
+	if r.onTranscript != nil {
+		r.onTranscript(callID, messages)
+	}
 	return int(inserted), nil
 }
 
@@ -383,8 +378,6 @@ func scanCall(row rowScanner) (models.Call, error) {
 		&c.UserID,
 		&c.PhoneNumberID,
 		&c.AgentID,
-		&c.CampaignID,
-		&c.LeadID,
 		&c.Peer,
 		&c.CallType,
 		&c.Status,
@@ -394,6 +387,7 @@ func scanCall(row rowScanner) (models.Call, error) {
 		&c.EndedAt,
 		&c.CreatedAt,
 		&c.UpdatedAt,
+		&c.Summary,
 	); err != nil {
 		return models.Call{}, err
 	}
@@ -407,4 +401,93 @@ func nullIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// escapeLike makes a search term match literally inside LIKE, where % and _
+// are wildcards and \ is the default escape character.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// onlyDigits keeps the digits of a search term, so a number typed with spaces,
+// dashes or a leading + still matches a stored peer.
+func onlyDigits(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// BroadcastContactOwned reports whether contactID is one of the user's
+// broadcast contacts, and returns its E.164 phone number.
+func (r *Repository) BroadcastContactOwned(ctx context.Context, userID, contactID string) (string, bool, error) {
+	var phone string
+	err := r.pool.QueryRow(ctx,
+		`SELECT phone_number FROM broadcast_contacts WHERE id = $1 AND user_id = $2`,
+		contactID, userID).Scan(&phone)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("check broadcast contact: %w", err)
+	}
+	return phone, true, nil
+}
+
+// LinkBroadcastContact records that the call was placed from a broadcast
+// contact, so the contact's panel lists it, and marks the contact as being
+// called (taking it out of the auto-dialer's queue; the dialer settles it to
+// answered / no_answer when the call ends). Both must be the user's.
+func (r *Repository) LinkBroadcastContact(ctx context.Context, userID, callID, contactID string) error {
+	_, err := r.pool.Exec(ctx, `
+		WITH linked AS (
+			UPDATE calls SET broadcast_contact_id = $3
+			WHERE id = $1 AND user_id = $2
+			  AND EXISTS (SELECT 1 FROM broadcast_contacts WHERE id = $3 AND user_id = $2)
+			RETURNING id
+		)
+		UPDATE broadcast_contacts
+		SET call_status = 'calling', last_call_id = (SELECT id FROM linked), last_error = NULL, updated_at = now()
+		WHERE id = $3 AND user_id = $2 AND EXISTS (SELECT 1 FROM linked)`,
+		callID, userID, contactID)
+	if err != nil {
+		return fmt.Errorf("link call to broadcast contact: %w", err)
+	}
+	return nil
+}
+
+// ListByBroadcastContact returns the calls placed from one broadcast contact,
+// newest first, with the total.
+func (r *Repository) ListByBroadcastContact(ctx context.Context, userID, contactID string, limit, offset int) ([]models.Call, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM calls WHERE user_id = $1 AND broadcast_contact_id = $2`,
+		userID, contactID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count broadcast contact calls: %w", err)
+	}
+	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
+		SELECT %s
+		FROM calls
+		WHERE user_id = $1 AND broadcast_contact_id = $2
+		ORDER BY created_at DESC, id DESC
+		LIMIT $3 OFFSET $4`, callColumns), userID, contactID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list broadcast contact calls: %w", err)
+	}
+	defer rows.Close()
+	out := make([]models.Call, 0)
+	for rows.Next() {
+		c, err := scanCall(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan call: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list broadcast contact calls: %w", err)
+	}
+	return out, total, nil
 }

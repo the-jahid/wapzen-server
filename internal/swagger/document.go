@@ -14,7 +14,6 @@ import (
 	"whatsapp-ai-caller-server/internal/swagger/modules/agents"
 	"whatsapp-ai-caller-server/internal/swagger/modules/calls"
 	"whatsapp-ai-caller-server/internal/swagger/modules/knowledge_base"
-	"whatsapp-ai-caller-server/internal/swagger/modules/outbound_campaigns"
 	"whatsapp-ai-caller-server/internal/swagger/modules/phone_numbers"
 	"whatsapp-ai-caller-server/internal/swagger/modules/tools"
 	"whatsapp-ai-caller-server/internal/swagger/oas"
@@ -76,7 +75,6 @@ func BuildDocument() oas.OpenAPIObject {
 	calls.InjectStaticCallDocs(doc)
 	phone_numbers.InjectStaticPhoneNumberDocs(doc)
 	knowledge_base.InjectStaticKnowledgeBaseDocs(doc)
-	outbound_campaigns.InjectStaticOutboundCampaignDocs(doc)
 	tools.InjectStaticToolDocs(doc)
 
 	return doc
