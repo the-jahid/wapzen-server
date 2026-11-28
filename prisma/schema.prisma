@@ -91,6 +91,9 @@ model ChatAgent {
   // files (src/agent-files). They stay uploaded.
   filesEnabled                 Boolean   @default(true) @map("files_enabled")
   shortReplies                 Boolean   @default(true) @map("short_replies")
+  // Agent Rules: the owner's own rules, sent to the model right after their
+  // prompt on every reply. '' = none. Nothing of ours is added (user rule).
+  agentRules                   String    @default("") @map("agent_rules")
   // The owner's website, which the agent reads while it replies when
   // websiteEnabled is on (src/website/website-reader.ts). Stored as typed.
   websiteUrl                   String    @default("") @map("website_url")
